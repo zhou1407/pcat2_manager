@@ -384,83 +384,92 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                         }
                     }
 
-                    G_STMT_START
+                    mm_data->modem_signal_strength = 0;
+
+                    signal_value = 0;
+                    value_raw_str = g_hash_table_lookup(table, "RSSI");
+                    if(value_raw_str!=NULL)
                     {
-                        value_raw_str = g_hash_table_lookup(table, "RSSI");
-                        if(value_raw_str!=NULL)
+                        if(sscanf(value_raw_str, "%d", &signal_raw)>0)
                         {
-                            if(sscanf(value_raw_str, "%d", &signal_raw)>0)
+                            if(signal_raw >= -65)
                             {
-                                if(signal_raw >= -65)
-                                {
-                                    signal_value = 100;
-                                }
-                                else if(signal_raw >= -85)
-                                {
-                                    signal_value = (signal_raw + 85) * 5;
-                                }
-
-                                break;
+                                signal_value = 100;
                             }
-                        }
-
-                        value_raw_str = g_hash_table_lookup(table, "RSRQ");
-                        if(value_raw_str!=NULL)
-                        {
-                            if(sscanf(value_raw_str, "%d", &signal_raw)>0)
+                            else if(signal_raw >= -85)
                             {
-                                if(signal_raw >= -10)
-                                {
-                                    signal_value = 100;
-                                }
-                                else if(signal_raw >= -20)
-                                {
-                                    signal_value = (signal_raw + 20) * 10;
-                                }
-
-                                break;
-                            }
-                        }
-
-                        value_raw_str = g_hash_table_lookup(table, "RSRP");
-                        if(value_raw_str!=NULL)
-                        {
-                            if(sscanf(value_raw_str, "%d", &signal_raw)>0)
-                            {
-                                if(signal_raw >= -80)
-                                {
-                                    signal_value = 100;
-                                }
-                                else if(signal_raw >= -100)
-                                {
-                                    signal_value = (signal_raw + 100) * 5;
-                                }
-
-                                break;
-                            }
-                        }
-
-                        value_raw_str = g_hash_table_lookup(table, "RSCP");
-                        if(value_raw_str!=NULL)
-                        {
-                            if(sscanf(value_raw_str, "%d", &signal_raw)>0)
-                            {
-                                if(signal_raw >= -60)
-                                {
-                                    signal_value = 100;
-                                }
-                                else if(signal_raw >= -100)
-                                {
-                                    signal_value = (signal_raw + 100) * 5 / 2;
-                                }
-
-                                break;
+                                signal_value = (signal_raw + 85) * 5;
                             }
                         }
                     }
-                    G_STMT_END;
+                    if(mm_data->modem_signal_strength < signal_value)
+                    {
+                        mm_data->modem_signal_strength = signal_value;
+                    }
 
-                    mm_data->modem_signal_strength = signal_value;
+                    signal_value = 0;
+                    value_raw_str = g_hash_table_lookup(table, "RSRQ");
+                    if(value_raw_str!=NULL)
+                    {
+                        if(sscanf(value_raw_str, "%d", &signal_raw)>0)
+                        {
+                            if(signal_raw >= -10)
+                            {
+                                signal_value = 100;
+                            }
+                            else if(signal_raw >= -20)
+                            {
+                                signal_value = (signal_raw + 20) * 10;
+                            }
+                        }
+                    }
+                    if(mm_data->modem_signal_strength < signal_value)
+                    {
+                        mm_data->modem_signal_strength = signal_value;
+                    }
+
+                    signal_value = 0;
+                    value_raw_str = g_hash_table_lookup(table, "RSRP");
+                    if(value_raw_str!=NULL)
+                    {
+                        if(sscanf(value_raw_str, "%d", &signal_raw)>0)
+                        {
+                            if(signal_raw >= -80)
+                            {
+                                signal_value = 100;
+                            }
+                            else if(signal_raw >= -100)
+                            {
+                                signal_value = (signal_raw + 100) * 5;
+                            }
+                        }
+                    }
+                    if(mm_data->modem_signal_strength < signal_value)
+                    {
+                        mm_data->modem_signal_strength = signal_value;
+                    }
+
+                    signal_value = 0;
+                    value_raw_str = g_hash_table_lookup(table, "RSCP");
+                    if(value_raw_str!=NULL)
+                    {
+                        if(sscanf(value_raw_str, "%d", &signal_raw)>0)
+                        {
+                            if(signal_raw >= -60)
+                            {
+                                signal_value = 100;
+                            }
+                            else if(signal_raw >= -100)
+                            {
+                                signal_value = (signal_raw + 100) * 5 / 2;
+                            }
+                        }
+                    }
+                    if(mm_data->modem_signal_strength < signal_value)
+                    {
+                        mm_data->modem_signal_strength = signal_value;
+                    }
+
                     g_message("Modem signal strength: %d", signal_value);
                 }
                 else if(g_strcmp0(cmd, "SIMSTATUS")==0)
