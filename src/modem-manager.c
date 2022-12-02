@@ -35,6 +35,9 @@ typedef struct _PCatModemManagerData
     PCatModemManagerState state;
     GThread *modem_work_thread;
     GHashTable *modem_mode_table;
+    gboolean modem_exist;
+    gboolean system_first_run;
+    gboolean modem_first_run;
     PCatModemManagerMode modem_mode;
     gboolean modem_rfkill_state;
     gint modem_signal_strength;
@@ -712,19 +715,23 @@ static inline gboolean pcat_modem_manager_run_external_exec(
                 mm_data->external_control_exec_process, NULL,
                 pcat_modem_manager_external_control_exec_wait_func,
                 mm_data);
+
+            mm_data->modem_first_run = FALSE;
         }
         G_STMT_END;
 
     }
-    else
+    else if(mm_data->modem_first_run)
     {
         /* TODO: Run external control exec as daemon. */
+
+        mm_data->modem_first_run = FALSE;
     }
 
     return ret;
 }
 
-static void pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
+static gboolean pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
 {
     libusb_device *dev;
     guint i;
@@ -736,14 +743,15 @@ static void pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
     guint uc;
     gboolean detected;
     PCatModemManagerDeviceType device_type = PCAT_MODEM_MANAGER_DEVICE_NONE;
+    gboolean modem_exist = FALSE;
 
     cnt = libusb_get_device_list(NULL, &devs);
     if(cnt < 0)
     {
-        return;
+        return FALSE;
     }
 
-    for(i=0;devs[i]!=NULL;i++)
+    for(i=0;devs[i]!=NULL && !modem_exist;i++)
     {
         detected = FALSE;
         dev = devs[i];
@@ -767,6 +775,7 @@ static void pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
             {
                 detected = TRUE;
                 device_type = usb_data->device_type;
+
                 break;
             }
         }
@@ -793,20 +802,33 @@ static void pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
         }
         if(usb_data->external_control_exec!=NULL)
         {
-            g_spawn_command_line_async("ModemManagerSwitch.sh disable",
-                NULL);
+            if(mm_data->system_first_run)
+            {
+                g_spawn_command_line_async("ModemManagerSwitch.sh disable",
+                    NULL);
+                mm_data->system_first_run = FALSE;
+            }
             pcat_modem_manager_run_external_exec(mm_data, usb_data);
         }
         else
         {
-            g_spawn_command_line_async("ModemManagerSwitch.sh enable",
-                NULL);
+            if(mm_data->system_first_run)
+            {
+                g_spawn_command_line_async("ModemManagerSwitch.sh enable",
+                    NULL);
+                mm_data->system_first_run = FALSE;
+            }
         }
+
+        modem_exist = TRUE;
     }
 
     libusb_free_device_list(devs, 1);
 
     mm_data->device_type = device_type;
+    mm_data->modem_exist = modem_exist;
+
+    return modem_exist;
 }
 
 static gpointer pcat_modem_manager_modem_work_thread_func(
@@ -814,6 +836,8 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
 {
     PCatModemManagerData *mm_data = (PCatModemManagerData *)user_data;
     PCatManagerMainConfigData *main_config_data;
+    gboolean modem_exist = FALSE;
+    guint i;
 
     main_config_data = pcat_main_config_data_get();
 
@@ -823,6 +847,7 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
         {
             case PCAT_MODEM_MANAGER_STATE_NONE:
             {
+                mm_data->modem_first_run = TRUE;
                 pcat_modem_manager_modem_power_init(mm_data,
                     main_config_data);
                 mm_data->state = PCAT_MODEM_MANAGER_STATE_READY;
@@ -835,6 +860,35 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
                 if(!pcat_main_is_running_on_distro())
                 {
                     pcat_modem_manager_scan_usb_devs(mm_data);
+                }
+
+                if(!mm_data->work_flag)
+                {
+                    break;
+                }
+
+                if(modem_exist && !mm_data->modem_exist)
+                {
+                    pcat_modem_manager_device_rfkill_mode_set(TRUE);
+
+                    for(i=0;i<30 && mm_data->work_flag;i++)
+                    {
+                        g_usleep(100000);
+                    }
+
+                    if(!mm_data->work_flag)
+                    {
+                        break;
+                    }
+
+                    pcat_modem_manager_device_rfkill_mode_set(FALSE);
+                }
+
+                modem_exist = mm_data->modem_exist;
+
+                if(!mm_data->work_flag)
+                {
+                    break;
                 }
 
                 g_usleep(1000000); /* WIP */
@@ -946,6 +1000,8 @@ gboolean pcat_modem_manager_init()
     g_pcat_modem_manager_data.work_flag = TRUE;
     g_mutex_init(&(g_pcat_modem_manager_data.mutex));
 
+    g_pcat_modem_manager_data.modem_exist = FALSE;
+    g_pcat_modem_manager_data.system_first_run = TRUE;
     g_pcat_modem_manager_data.modem_mode_table = g_hash_table_new_full(
         g_str_hash, g_str_equal, NULL, NULL);
     g_hash_table_insert(g_pcat_modem_manager_data.modem_mode_table,
