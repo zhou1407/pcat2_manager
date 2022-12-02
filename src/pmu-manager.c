@@ -693,7 +693,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         pmu_data->last_battery_voltages[127] = battery_voltage;
     }
 
-    pmu_data->last_battery_voltage = 0;
+    battery_voltage_avg = 0;
     for(i=0;i<128;i++)
     {
         if(pmu_data->last_battery_voltages[i] < 0)
@@ -702,13 +702,12 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         }
         else
         {
-            pmu_data->last_battery_voltage +=
-                pmu_data->last_battery_voltages[i];
+            battery_voltage_avg += pmu_data->last_battery_voltages[i];
         }
     }
 
-    pmu_data->last_battery_voltage /= i;
-    battery_voltage_avg = pmu_data->last_battery_voltage;
+    battery_voltage_avg /= i;
+    pmu_data->last_battery_voltage = battery_voltage;
 
     on_battery = (charger_voltage < 4200);
     battery_percentage = 100.0f;
