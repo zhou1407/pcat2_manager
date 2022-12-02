@@ -89,6 +89,7 @@ typedef struct _PCatPMUManagerData
     gboolean last_on_battery_state;
     guint last_battery_percentage;
     guint last_battery_percentage_cap;
+    gint last_battery_voltages[128];
 
     gchar *pmu_fw_version;
     gint64 charger_on_auto_start_last_timestamp;
@@ -598,7 +599,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     gint64 pmu_unix_time, host_unix_time;
     FILE *fp;
     gdouble battery_percentage;
-    guint battery_percentage_i;
+    guint battery_percentage_i, battery_voltage_avg;
     gboolean on_battery;
     struct timeval tv;
     guint8 board_temp = 0;
@@ -677,24 +678,56 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         "GPIO input state %X, output state %X.", battery_voltage,
         charger_voltage, gpio_input, gpio_output);
 
+    for(i=0;i<128;i++)
+    {
+        if(pmu_data->last_battery_voltages[i] < 0)
+        {
+            pmu_data->last_battery_voltages[i] = battery_voltage;
+            break;
+        }
+    }
+    if(i>=128)
+    {
+        memmove(pmu_data->last_battery_voltages,
+            pmu_data->last_battery_voltages + 1, 127 * sizeof(gint));
+        pmu_data->last_battery_voltages[127] = battery_voltage;
+    }
+
+    pmu_data->last_battery_voltage = 0;
+    for(i=0;i<128;i++)
+    {
+        if(pmu_data->last_battery_voltages[i] < 0)
+        {
+            break;
+        }
+        else
+        {
+            pmu_data->last_battery_voltage +=
+                pmu_data->last_battery_voltages[i];
+        }
+    }
+
+    pmu_data->last_battery_voltage /= i;
+    battery_voltage_avg = pmu_data->last_battery_voltage;
+
     on_battery = (charger_voltage < 4200);
     battery_percentage = 100.0f;
 
     if(!on_battery)
     {
-        if(battery_voltage > pmu_data->battery_charge_table[0])
+        if(battery_voltage_avg > pmu_data->battery_charge_table[0])
         {
             battery_percentage = 100.0f;
         }
-        else if(battery_voltage > pmu_data->battery_charge_table[10])
+        else if(battery_voltage_avg > pmu_data->battery_charge_table[10])
         {
             battery_percentage = 0.0f;
             for(i=0;i<10;i++)
             {
-                if(battery_voltage >= pmu_data->battery_charge_table[i+1])
+                if(battery_voltage_avg >= pmu_data->battery_charge_table[i+1])
                 {
                     battery_percentage = (90.0f - 10 * i) +
-                        ((gdouble)battery_voltage -
+                        ((gdouble)battery_voltage_avg -
                          pmu_data->battery_charge_table[i+1]) * 10 /
                         (pmu_data->battery_charge_table[i] -
                          pmu_data->battery_charge_table[i+1]);
@@ -711,20 +744,20 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     else if(pcat_modem_manager_device_type_get()==
         PCAT_MODEM_MANAGER_DEVICE_5G)
     {
-        if(battery_voltage > pmu_data->battery_discharge_table_5g[0])
+        if(battery_voltage_avg > pmu_data->battery_discharge_table_5g[0])
         {
             battery_percentage = 100.0f;
         }
-        else if(battery_voltage > pmu_data->battery_discharge_table_5g[10])
+        else if(battery_voltage_avg > pmu_data->battery_discharge_table_5g[10])
         {
             battery_percentage = 0.0f;
             for(i=0;i<10;i++)
             {
-                if(battery_voltage >=
+                if(battery_voltage_avg >=
                     pmu_data->battery_discharge_table_5g[i+1])
                 {
                     battery_percentage = (90.0f - 10 * i) +
-                        ((gdouble)battery_voltage -
+                        ((gdouble)battery_voltage_avg -
                          pmu_data->battery_discharge_table_5g[i+1]) * 10 /
                         (pmu_data->battery_discharge_table_5g[i] -
                          pmu_data->battery_discharge_table_5g[i+1]);
@@ -740,21 +773,21 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     }
     else
     {
-        if(battery_voltage > pmu_data->battery_discharge_table_normal[0])
+        if(battery_voltage_avg > pmu_data->battery_discharge_table_normal[0])
         {
             battery_percentage = 100.0f;
         }
-        else if(battery_voltage >
+        else if(battery_voltage_avg >
             pmu_data->battery_discharge_table_normal[10])
         {
             battery_percentage = 0.0f;
             for(i=0;i<10;i++)
             {
-                if(battery_voltage >=
+                if(battery_voltage_avg >=
                     pmu_data->battery_discharge_table_normal[i+1])
                 {
                     battery_percentage = (90.0f - 10 * i) +
-                        ((gdouble)battery_voltage -
+                        ((gdouble)battery_voltage_avg -
                          pmu_data->battery_discharge_table_normal[i+1]) * 10 /
                         (pmu_data->battery_discharge_table_normal[i] -
                          pmu_data->battery_discharge_table_normal[i+1]);
@@ -769,7 +802,6 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         }
     }
 
-    pmu_data->last_battery_voltage = battery_voltage;
     pmu_data->last_charger_voltage = charger_voltage;
     pmu_data->last_on_battery_state = on_battery;
     pmu_data->board_temp = board_temp;
@@ -1425,6 +1457,11 @@ gboolean pcat_pmu_manager_init()
     g_pcat_pmu_manager_data.last_battery_percentage_cap = 10000;
 
     g_mkdir_with_parents(PCAT_PMU_MANAGER_STATEFS_BATTERY_PATH, 0755);
+
+    for(i=0;i<128;i++)
+    {
+        g_pcat_pmu_manager_data.last_battery_voltages[i] = -1;
+    }
 
     if(!pcat_pmu_serial_open(&g_pcat_pmu_manager_data))
     {
