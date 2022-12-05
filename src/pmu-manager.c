@@ -678,6 +678,17 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         "GPIO input state %X, output state %X.", battery_voltage,
         charger_voltage, gpio_input, gpio_output);
 
+    on_battery = (charger_voltage < 4200);
+
+    if(!!pmu_data->last_on_battery_state != !!on_battery)
+    {
+        for(i=0;i<128;i++)
+        {
+            pmu_data->last_battery_voltages[i] = -1;
+        }
+    }
+    pmu_data->last_on_battery_state = on_battery;
+
     for(i=0;i<128;i++)
     {
         if(pmu_data->last_battery_voltages[i] < 0)
@@ -709,7 +720,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     battery_voltage_avg /= i;
     pmu_data->last_battery_voltage = battery_voltage;
 
-    on_battery = (charger_voltage < 4200);
+
     battery_percentage = 100.0f;
 
     if(!on_battery)
@@ -802,7 +813,6 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     }
 
     pmu_data->last_charger_voltage = charger_voltage;
-    pmu_data->last_on_battery_state = on_battery;
     pmu_data->board_temp = board_temp;
     pmu_data->board_temp -= 40;
 
