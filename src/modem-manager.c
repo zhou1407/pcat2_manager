@@ -879,11 +879,11 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
                     {
                         g_subprocess_force_exit(
                             mm_data->external_control_exec_process);
-                        g_subprocess_wait(
-                            mm_data->external_control_exec_process,
-                            NULL, NULL);
-                        g_object_unref(mm_data->external_control_exec_process);
-                        mm_data->external_control_exec_process = NULL;
+
+                        for(i=0;i<10 && mm_data->work_flag;i++)
+                        {
+                            g_usleep(100000);
+                        }
                     }
 
                     g_usleep(100000);
@@ -928,7 +928,7 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
                     break;
                 }
 
-                g_usleep(1000000); /* WIP */
+                g_usleep(1000000);
 
                 break;
             }
@@ -951,9 +951,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
     if(mm_data->external_control_exec_process!=NULL)
     {
         g_subprocess_force_exit(mm_data->external_control_exec_process);
-        g_subprocess_wait(mm_data->external_control_exec_process, NULL, NULL);
-        g_object_unref(mm_data->external_control_exec_process);
-        mm_data->external_control_exec_process = NULL;
     }
 
     if(mm_data->gpio_modem_reset_line!=NULL)
