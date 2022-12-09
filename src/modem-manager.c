@@ -15,7 +15,8 @@
 typedef enum
 {
     PCAT_MODEM_MANAGER_STATE_NONE,
-    PCAT_MODEM_MANAGER_STATE_READY
+    PCAT_MODEM_MANAGER_STATE_READY,
+    PCAT_MODEM_MANAGER_STATE_RUN
 }PCatModemManagerState;
 
 typedef struct _PCatModemManagerUSBData
@@ -847,7 +848,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
         {
             case PCAT_MODEM_MANAGER_STATE_NONE:
             {
-                mm_data->modem_first_run = TRUE;
                 pcat_modem_manager_modem_power_init(mm_data,
                     main_config_data);
                 mm_data->state = PCAT_MODEM_MANAGER_STATE_READY;
@@ -856,6 +856,43 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
             }
 
             case PCAT_MODEM_MANAGER_STATE_READY:
+            {
+                if(!mm_data->modem_rfkill_state)
+                {
+                    mm_data->modem_first_run = TRUE;
+                    mm_data->state = PCAT_MODEM_MANAGER_STATE_RUN;
+                }
+                else
+                {
+                    if(mm_data->external_control_exec_stdout_read_source!=NULL)
+                    {
+                        g_source_destroy(
+                            mm_data->external_control_exec_stdout_read_source);
+                        g_source_unref(
+                            mm_data->external_control_exec_stdout_read_source);
+                        mm_data->external_control_exec_stdout_read_source =
+                            NULL;
+                    }
+                    mm_data->external_control_exec_stdout_stream = NULL;
+
+                    if(mm_data->external_control_exec_process!=NULL)
+                    {
+                        g_subprocess_force_exit(
+                            mm_data->external_control_exec_process);
+                        g_subprocess_wait(
+                            mm_data->external_control_exec_process,
+                            NULL, NULL);
+                        g_object_unref(mm_data->external_control_exec_process);
+                        mm_data->external_control_exec_process = NULL;
+                    }
+
+                    g_usleep(100000);
+                }
+
+                break;
+            }
+
+            case PCAT_MODEM_MANAGER_STATE_RUN:
             {
                 if(!pcat_main_is_running_on_distro())
                 {
@@ -902,6 +939,14 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
             }
         }
     }
+
+    if(mm_data->external_control_exec_stdout_read_source!=NULL)
+    {
+        g_source_destroy(mm_data->external_control_exec_stdout_read_source);
+        g_source_unref(mm_data->external_control_exec_stdout_read_source);
+        mm_data->external_control_exec_stdout_read_source = NULL;
+    }
+    mm_data->external_control_exec_stdout_stream = NULL;
 
     if(mm_data->external_control_exec_process!=NULL)
     {
@@ -1177,5 +1222,13 @@ void pcat_modem_manager_device_rfkill_mode_set(gboolean state)
 
         gpiod_line_set_value(
             g_pcat_modem_manager_data.gpio_modem_rf_kill_line, value);
+    }
+
+    if(state)
+    {
+        if(g_pcat_modem_manager_data.state >= PCAT_MODEM_MANAGER_STATE_RUN)
+        {
+            g_pcat_modem_manager_data.state = PCAT_MODEM_MANAGER_STATE_READY;
+        }
     }
 }
