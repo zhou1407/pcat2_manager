@@ -1033,6 +1033,8 @@ static gboolean pcat_modem_scan_timeout_func(gpointer user_data)
                 pcat_modem_manager_device_rfkill_mode_set(FALSE);
 
                 mm_data->modem_have_5g_connected = FALSE;
+
+                mm_data->modem_5g_connection_timestamp = now;
             }
         }
     }
