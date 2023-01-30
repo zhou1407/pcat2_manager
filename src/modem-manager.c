@@ -1018,16 +1018,27 @@ static gboolean pcat_modem_scan_timeout_func(gpointer user_data)
     PCatModemManagerData *mm_data = (PCatModemManagerData *)user_data;
     const PCatManagerUserConfigData *uconfig_data;
     gint64 now;
+    gint64 modem_5g_fail_timeout;
 
     uconfig_data = pcat_main_user_config_data_get();
     now = g_get_monotonic_time();
+
+    if(uconfig_data->modem_5g_fail_timeout > 60)
+    {
+        modem_5g_fail_timeout = (gint64)uconfig_data->modem_5g_fail_timeout *
+            1e6;
+    }
+    else
+    {
+        modem_5g_fail_timeout = (gint64)600 * 1e6;
+    }
 
     if(!uconfig_data->modem_disable_5g_fail_auto_reset)
     {
         if(mm_data->modem_have_5g_connected && !mm_data->modem_rfkill_state)
         {
             if(now > mm_data->modem_5g_connection_timestamp +
-                uconfig_data->modem_5g_fail_timeout * 1e6)
+                modem_5g_fail_timeout)
             {
                 pcat_modem_manager_device_rfkill_mode_set(TRUE);
                 pcat_modem_manager_device_rfkill_mode_set(FALSE);
