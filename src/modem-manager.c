@@ -78,6 +78,20 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
         .external_control_exec_is_daemon = FALSE
     },
     {
+        .device_type = PCAT_MODEM_MANAGER_DEVICE_5G,
+        .id_vendor = 0x2C7C,
+        .id_product = 0x800,
+        .external_control_exec = "quectel-cm",
+        .external_control_exec_is_daemon = FALSE
+    },
+    {
+        .device_type = PCAT_MODEM_MANAGER_DEVICE_5G,
+        .id_vendor = 0x2C7C,
+        .id_product = 0x801,
+        .external_control_exec = "quectel-cm",
+        .external_control_exec_is_daemon = FALSE
+    },
+    {
         .device_type = PCAT_MODEM_MANAGER_DEVICE_GENERAL,
         .id_vendor = 0x2C7C,
         .id_product = 0,
@@ -860,6 +874,8 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
                 if(!mm_data->modem_rfkill_state)
                 {
                     mm_data->modem_first_run = TRUE;
+                    mm_data->modem_5g_connection_timestamp =
+                        g_get_monotonic_time();
                     mm_data->state = PCAT_MODEM_MANAGER_STATE_RUN;
                 }
                 else
