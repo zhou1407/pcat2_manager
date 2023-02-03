@@ -1109,6 +1109,8 @@ static void pcat_controller_command_modem_network_get_func(
 {
     struct json_object *rroot, *child;
     const PCatManagerUserConfigData *uconfig_data;
+    PCatModemManagerDeviceType device_type;
+    const gchar *device_type_str = "none";
 
     rroot = json_object_new_object();
 
@@ -1119,6 +1121,28 @@ static void pcat_controller_command_modem_network_get_func(
     json_object_object_add(rroot, "code", child);
 
     uconfig_data = pcat_main_user_config_data_get();
+
+    device_type = pcat_modem_manager_device_type_get();
+    switch(device_type)
+    {
+        case PCAT_MODEM_MANAGER_DEVICE_5G:
+        {
+            device_type_str = "5g";
+            break;
+        }
+        case PCAT_MODEM_MANAGER_DEVICE_GENERAL:
+        {
+            device_type_str = "lte";
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    child = json_object_new_string(device_type_str);
+    json_object_object_add(rroot, "device-type", child);
 
     child = json_object_new_string(uconfig_data->modem_dial_apn!=NULL ?
         uconfig_data->modem_dial_apn : "");
