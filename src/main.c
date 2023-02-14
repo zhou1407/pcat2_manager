@@ -1117,6 +1117,7 @@ static void *pcat_main_connection_check_thread_func(void *user_data)
     gchar *command;
     gint wstatus;
     guint retry_count = 0;
+    gchar **ping_argv = NULL;
 
     while(g_pcat_main_connection_check_flag)
     {
@@ -1136,10 +1137,21 @@ static void *pcat_main_connection_check_thread_func(void *user_data)
             for(i=0;check_address_list[i]!=NULL &&
                 g_pcat_main_connection_check_flag;i++)
             {
+                ping_argv = NULL;
                 command = g_strdup_printf("ping -W 3 -w 3 -c 1 -q %s",
                     check_address_list[i]);
-                if(g_spawn_command_line_sync(command, NULL,
-                    NULL, &wstatus, NULL))
+                if(!g_shell_parse_argv(command, NULL, &ping_argv, NULL))
+                {
+                    g_free(command);
+
+                    continue;
+                }
+                g_free(command);
+
+                if(g_spawn_sync(NULL, ping_argv, NULL,
+                    G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL |
+                    G_SPAWN_STDERR_TO_DEV_NULL, NULL, NULL, NULL, NULL,
+                    &wstatus, NULL))
                 {
                     if(WIFEXITED(wstatus))
                     {
@@ -1149,13 +1161,13 @@ static void *pcat_main_connection_check_thread_func(void *user_data)
                         if(WEXITSTATUS(wstatus)==0)
                         {
                             connection_status = TRUE;
-                            g_free(command);
+                            g_strfreev(ping_argv);
 
                             break;
                         }
                     }
                 }
-                g_free(command);
+                g_strfreev(ping_argv);
             }
         }
 
