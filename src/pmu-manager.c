@@ -94,6 +94,7 @@ typedef struct _PCatPMUManagerData
     gchar *pmu_fw_version;
     gint64 charger_on_auto_start_last_timestamp;
     gboolean system_time_set_flag;
+    gint64 pmu_time_set_timestamp;
 
     guint power_on_event;
     guint modem_power_usage;
@@ -604,6 +605,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     struct timeval tv;
     guint8 board_temp = 0;
     guint i;
+    gint64 now;
 
     if(len < 16)
     {
@@ -643,11 +645,16 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         host_unix_time = g_date_time_to_unix(host_dt);
         g_date_time_unref(host_dt);
 
-        if(pmu_unix_time - host_unix_time > 60 ||
-            host_unix_time - pmu_unix_time > 60)
+        now = g_get_monotonic_time();
+
+        if((now > pmu_data->pmu_time_set_timestamp + 15000000L) &&
+            (pmu_unix_time - host_unix_time > 60 ||
+            host_unix_time - pmu_unix_time > 60))
         {
             g_message("PMU time out of sync: %d-%d-%d %02d:%02d:%02d, "
                 "send time sync command.", y, m, d, h, min, s);
+
+            pmu_data->pmu_time_set_timestamp = now;
 
             pcat_pmu_manager_date_time_sync(pmu_data);
         }
