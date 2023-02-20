@@ -38,6 +38,7 @@ gboolean pcat_modem_manager_status_get(PCatModemManagerMode *mode,
     gint *signal_strength, gchar **isp_name, gchar **isp_plmn);
 PCatModemManagerDeviceType pcat_modem_manager_device_type_get();
 void pcat_modem_manager_device_rfkill_mode_set(gboolean state);
+guint pcat_modem_manager_device_power_usage_get();
 
 G_END_DECLS
 

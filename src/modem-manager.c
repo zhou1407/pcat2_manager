@@ -24,6 +24,7 @@ typedef struct _PCatModemManagerUSBData
     PCatModemManagerDeviceType device_type;
     guint16 id_vendor;
     guint16 id_product;
+    guint power_usage;
     const gchar *external_control_exec;
     gboolean external_control_exec_is_daemon;
 }PCatModemManagerUSBData;
@@ -66,6 +67,7 @@ typedef struct _PCatModemManagerData
     gint64 modem_5g_connection_timestamp;
 
     guint scanning_timeout_id;
+    guint modem_power_usage;
 }PCatModemManagerData;
 
 static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
@@ -74,6 +76,7 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
         .device_type = PCAT_MODEM_MANAGER_DEVICE_5G,
         .id_vendor = 0x2C7C,
         .id_product = 0x900,
+        .power_usage = 2,
         .external_control_exec = "quectel-cm",
         .external_control_exec_is_daemon = FALSE
     },
@@ -81,6 +84,7 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
         .device_type = PCAT_MODEM_MANAGER_DEVICE_5G,
         .id_vendor = 0x2C7C,
         .id_product = 0x800,
+        .power_usage = 1,
         .external_control_exec = "quectel-cm",
         .external_control_exec_is_daemon = FALSE
     },
@@ -88,6 +92,7 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
         .device_type = PCAT_MODEM_MANAGER_DEVICE_5G,
         .id_vendor = 0x2C7C,
         .id_product = 0x801,
+        .power_usage = 1,
         .external_control_exec = "quectel-cm",
         .external_control_exec_is_daemon = FALSE
     },
@@ -95,6 +100,7 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
         .device_type = PCAT_MODEM_MANAGER_DEVICE_GENERAL,
         .id_vendor = 0x2C7C,
         .id_product = 0,
+        .power_usage = 1,
         .external_control_exec = "quectel-cm",
         .external_control_exec_is_daemon = FALSE
     }
@@ -766,6 +772,8 @@ static gboolean pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
         return FALSE;
     }
 
+    mm_data->modem_power_usage = 0;
+
     for(i=0;devs[i]!=NULL && !modem_exist;i++)
     {
         detected = FALSE;
@@ -836,6 +844,7 @@ static gboolean pcat_modem_manager_scan_usb_devs(PCatModemManagerData *mm_data)
         }
 
         modem_exist = TRUE;
+        mm_data->modem_power_usage = usb_data->power_usage;
     }
 
     libusb_free_device_list(devs, 1);
@@ -1258,3 +1267,9 @@ void pcat_modem_manager_device_rfkill_mode_set(gboolean state)
         }
     }
 }
+
+guint pcat_modem_manager_device_power_usage_get()
+{
+    return g_pcat_modem_manager_data.modem_power_usage;
+}
+

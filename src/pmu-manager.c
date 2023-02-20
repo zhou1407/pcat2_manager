@@ -96,7 +96,7 @@ typedef struct _PCatPMUManagerData
     gboolean system_time_set_flag;
 
     guint power_on_event;
-    PCatModemManagerDeviceType modem_device_type;
+    guint modem_power_usage;
     gint board_temp;
 
     guint battery_discharge_table_normal[11];
@@ -646,7 +646,8 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         if(pmu_unix_time - host_unix_time > 60 ||
             host_unix_time - pmu_unix_time > 60)
         {
-            g_message("PMU time out of sync, send time sync command.");
+            g_message("PMU time out of sync: %d-%d-%d %02d:%02d:%02d, "
+                "send time sync command.", y, m, d, h, min, s);
 
             pcat_pmu_manager_date_time_sync(pmu_data);
         }
@@ -659,6 +660,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
             pmu_unix_time = g_date_time_to_unix(pmu_dt);
             g_date_time_unref(pmu_dt);
 
+            memset(&tv, 0, sizeof(struct timeval));
             tv.tv_sec = pmu_unix_time;
             settimeofday(&tv, NULL);
 
@@ -751,8 +753,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
             battery_percentage = 0.0f;
         }
     }
-    else if(pcat_modem_manager_device_type_get()==
-        PCAT_MODEM_MANAGER_DEVICE_5G)
+    else if(pcat_modem_manager_device_power_usage_get()>=2)
     {
         if(battery_voltage_avg > pmu_data->battery_discharge_table_5g[0])
         {
@@ -1261,7 +1262,7 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
     gboolean need_action = FALSE;
     guint dow;
     gint64 now;
-    PCatModemManagerDeviceType modem_device_type;
+    guint modem_power_usage;
     guint shutdown_voltage = 0;
 
     if(pmu_data->serial_channel==NULL)
@@ -1388,17 +1389,18 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
 
     config_data = pcat_main_config_data_get();
 
-    modem_device_type = pcat_modem_manager_device_type_get();
-    if(pmu_data->modem_device_type!=modem_device_type)
+    modem_power_usage = pcat_modem_manager_device_power_usage_get();
+
+    if(pmu_data->modem_power_usage!=modem_power_usage)
     {
-        switch(modem_device_type)
+        switch(modem_power_usage)
         {
-            case PCAT_MODEM_MANAGER_DEVICE_5G:
+            case 2:
             {
                 shutdown_voltage = config_data->pm_auto_shutdown_voltage_5g;
                 break;
             }
-            case PCAT_MODEM_MANAGER_DEVICE_GENERAL:
+            case 1:
             {
                 shutdown_voltage = config_data->pm_auto_shutdown_voltage_lte;
                 break;
@@ -1411,12 +1413,13 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
             }
         }
 
-        pmu_data->modem_device_type = modem_device_type;
+        pmu_data->modem_power_usage = modem_power_usage;
         pcat_pmu_manager_voltage_threshold_set_interval(pmu_data,
             0, 0, 0, 0, 0, shutdown_voltage, 0, 0);
 
-        g_message("Detected modem type %u, set shutdown voltage to %u.",
-            modem_device_type, shutdown_voltage);
+        g_message("Detected modem power usage level %u, "
+            "set shutdown voltage to %u.", modem_power_usage,
+            shutdown_voltage);
     }
 
     if(pmu_data->serial_write_source==0 &&
