@@ -632,33 +632,35 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
 
     now = g_get_monotonic_time();
 
-    if(pmu_data->system_time_set_flag &&
-        (now > pmu_data->pmu_time_set_timestamp + 15000000L))
+    if(pmu_data->system_time_set_flag)
     {
-        pmu_dt = g_date_time_new_utc(y, m, d, h, min, (gdouble)s);
-        if(pmu_dt!=NULL)
+        if(now > pmu_data->pmu_time_set_timestamp + 15000000L)
         {
-            pmu_unix_time = g_date_time_to_unix(pmu_dt);
-            g_date_time_unref(pmu_dt);
-        }
-        else
-        {
-            pmu_unix_time = 0;
-        }
+            pmu_dt = g_date_time_new_utc(y, m, d, h, min, (gdouble)s);
+            if(pmu_dt!=NULL)
+            {
+                pmu_unix_time = g_date_time_to_unix(pmu_dt);
+                g_date_time_unref(pmu_dt);
+            }
+            else
+            {
+                pmu_unix_time = 0;
+            }
 
-        host_dt = g_date_time_new_now_utc();
-        host_unix_time = g_date_time_to_unix(host_dt);
-        g_date_time_unref(host_dt);
+            host_dt = g_date_time_new_now_utc();
+            host_unix_time = g_date_time_to_unix(host_dt);
+            g_date_time_unref(host_dt);
 
-        if(pmu_unix_time > host_unix_time + 60 ||
-            host_unix_time > pmu_unix_time + 60)
-        {
-            g_message("PMU time out of sync: %d-%d-%d %02d:%02d:%02d, "
-                "send time sync command.", y, m, d, h, min, s);
+            if(pmu_unix_time > host_unix_time + 60 ||
+                host_unix_time > pmu_unix_time + 60)
+            {
+                g_message("PMU time out of sync: %d-%d-%d %02d:%02d:%02d, "
+                    "send time sync command.", y, m, d, h, min, s);
 
-            pmu_data->pmu_time_set_timestamp = now;
+                pmu_data->pmu_time_set_timestamp = now;
 
-            pcat_pmu_manager_date_time_sync(pmu_data);
+                pcat_pmu_manager_date_time_sync(pmu_data);
+            }
         }
     }
     else
