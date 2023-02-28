@@ -122,6 +122,9 @@ static guint g_pat_pmu_manager_battery_charge_table[11] =
     4200, 4150, 4100, 4050, 4000, 3950, 3900, 3850, 3800, 3750, 3700
 };
 
+static gboolean pcat_pmu_serial_open(PCatPMUManagerData *pmu_data);
+static void pcat_pmu_serial_close(PCatPMUManagerData *pmu_data);
+
 static void pcat_pmu_manager_command_data_free(
     PCatPMUManagerCommandData *data)
 {
@@ -273,6 +276,8 @@ static gboolean pcat_pmu_serial_write_watch_func(GIOChannel *source,
         else
         {
             g_warning("Serial port write error: %s", strerror(errno));
+
+            pcat_pmu_serial_close(pmu_data);
         }
     }
 
@@ -1112,6 +1117,16 @@ static gboolean pcat_pmu_serial_read_watch_func(GIOChannel *source,
         pcat_pmu_serial_read_data_parse(pmu_data);
     }
 
+    if(rsize < 0)
+    {
+        if(errno!=EAGAIN)
+        {
+            g_warning("Read serial port with error %s!", strerror(errno));
+
+            pcat_pmu_serial_close(pmu_data);
+        }
+    }
+
     return TRUE;
 }
 
@@ -1206,11 +1221,29 @@ static gboolean pcat_pmu_serial_open(PCatPMUManagerData *pmu_data)
     }
     g_io_channel_set_flags(channel, G_IO_FLAG_NONBLOCK, NULL);
 
+    if(pmu_data->serial_write_source > 0)
+    {
+        g_source_remove(pmu_data->serial_write_source);
+        pmu_data->serial_write_source = 0;
+    }
+
+    if(pmu_data->serial_read_source > 0)
+    {
+        g_source_remove(pmu_data->serial_read_source);
+        pmu_data->serial_read_source = 0;
+    }
+    if(pmu_data->serial_channel!=NULL)
+    {
+        g_io_channel_unref(pmu_data->serial_channel);
+    }
+    if(pmu_data->serial_fd > 0)
+    {
+        close(pmu_data->serial_fd);
+        pmu_data->serial_fd = -1;
+    }
+
     pmu_data->serial_fd = fd;
     pmu_data->serial_channel = channel;
-    pmu_data->serial_write_current_command_data = NULL;
-    pmu_data->serial_read_buffer = g_byte_array_new();
-    pmu_data->serial_write_command_queue = g_queue_new();
 
     pmu_data->serial_read_source = g_io_add_watch(channel,
         G_IO_IN, pcat_pmu_serial_read_watch_func, pmu_data);
@@ -1246,25 +1279,6 @@ static void pcat_pmu_serial_close(PCatPMUManagerData *pmu_data)
         close(pmu_data->serial_fd);
         pmu_data->serial_fd = -1;
     }
-
-    if(pmu_data->serial_write_current_command_data!=NULL)
-    {
-        pcat_pmu_manager_command_data_free(
-            pmu_data->serial_write_current_command_data);
-        pmu_data->serial_write_current_command_data = NULL;
-    }
-    if(pmu_data->serial_write_command_queue!=NULL)
-    {
-        g_queue_free_full(pmu_data->serial_write_command_queue,
-            (GDestroyNotify)pcat_pmu_manager_command_data_free);
-        pmu_data->serial_write_command_queue = NULL;
-    }
-
-    if(pmu_data->serial_read_buffer!=NULL)
-    {
-        g_byte_array_unref(pmu_data->serial_read_buffer);
-        pmu_data->serial_read_buffer = NULL;
-    }
 }
 
 static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
@@ -1283,6 +1297,8 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
 
     if(pmu_data->serial_channel==NULL)
     {
+        pcat_pmu_serial_open(pmu_data);
+
         return TRUE;
     }
 
@@ -1491,9 +1507,14 @@ gboolean pcat_pmu_manager_init()
         g_pcat_pmu_manager_data.last_battery_voltages[i] = -1;
     }
 
+    g_pcat_pmu_manager_data.serial_read_buffer = g_byte_array_new();
+    g_pcat_pmu_manager_data.serial_write_command_queue = g_queue_new();
+    g_pcat_pmu_manager_data.serial_write_current_command_data = NULL;
+
+
     if(!pcat_pmu_serial_open(&g_pcat_pmu_manager_data))
     {
-        return FALSE;
+        g_warning("Failed to open PMU serial port! Try it later....");
     }
 
     for(i=0;i<11;i++)
@@ -1606,6 +1627,25 @@ void pcat_pmu_manager_uninit()
     }
 
     pcat_pmu_serial_close(&g_pcat_pmu_manager_data);
+
+    if(g_pcat_pmu_manager_data.serial_write_current_command_data!=NULL)
+    {
+        pcat_pmu_manager_command_data_free(
+            g_pcat_pmu_manager_data.serial_write_current_command_data);
+        g_pcat_pmu_manager_data.serial_write_current_command_data = NULL;
+    }
+    if(g_pcat_pmu_manager_data.serial_write_command_queue!=NULL)
+    {
+        g_queue_free_full(g_pcat_pmu_manager_data.serial_write_command_queue,
+            (GDestroyNotify)pcat_pmu_manager_command_data_free);
+        g_pcat_pmu_manager_data.serial_write_command_queue = NULL;
+    }
+
+    if(g_pcat_pmu_manager_data.serial_read_buffer!=NULL)
+    {
+        g_byte_array_unref(g_pcat_pmu_manager_data.serial_read_buffer);
+        g_pcat_pmu_manager_data.serial_read_buffer = NULL;
+    }
 
     if(g_pcat_pmu_manager_data.pmu_fw_version!=NULL)
     {
