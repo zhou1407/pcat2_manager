@@ -1574,7 +1574,6 @@ gboolean pcat_pmu_manager_init()
     g_pcat_pmu_manager_data.initialized = TRUE;
 
     pcat_pmu_manager_schedule_time_update_internal(&g_pcat_pmu_manager_data);
-    pcat_pmu_manager_date_time_sync(&g_pcat_pmu_manager_data);
 
     uconfig_data = pcat_main_user_config_data_get();
 
