@@ -1246,50 +1246,50 @@ static void pcat_main_log_handle_func(const gchar *log_domain,
     GLogLevelFlags log_level, const gchar *message, gpointer user_data)
 {
     const char *level = "";
-	GLogLevelFlags minlevel = G_LOG_LEVEL_INFO;
+    GLogLevelFlags minlevel = G_LOG_LEVEL_INFO;
     gchar buffer[16384] = {0};
     gint outsize;
     GDateTime *dt;
     gchar *dtstr;
 
-	switch(log_level)
+    switch(log_level)
     {
-		case G_LOG_LEVEL_DEBUG:
+        case G_LOG_LEVEL_DEBUG:
         {
             level = "DEBUG";
             break;
         }
-		case G_LOG_LEVEL_INFO:
+        case G_LOG_LEVEL_INFO:
         {
             level = "INFO";
             break;
         }
-		case G_LOG_LEVEL_MESSAGE:
+        case G_LOG_LEVEL_MESSAGE:
         {
             level = "MESSAGE";
             break;
         }
-		case G_LOG_LEVEL_WARNING:
+        case G_LOG_LEVEL_WARNING:
         {
             level = "WARNING";
             break;
         }
-		case G_LOG_LEVEL_CRITICAL:
+        case G_LOG_LEVEL_CRITICAL:
         {
             level = "CRITICAL";
             break;
         }
-		case G_LOG_LEVEL_ERROR:
+        case G_LOG_LEVEL_ERROR:
         {
             level = "ERROR";
             break;
         }
-		default:
+        default:
         {
             level = "UNKNOWN";
             break;
         }
-	}
+    }
 
     if(log_domain==NULL)
     {
@@ -1310,14 +1310,14 @@ static void pcat_main_log_handle_func(const gchar *log_domain,
         fflush(g_pcat_main_debug_log_file_fp);
     }
 
-	if(log_level <= minlevel && outsize > 0)
-    {
-		fprintf(stderr, "%s", buffer);
-	}
-	if(log_level <= G_LOG_LEVEL_ERROR)
+    if(log_level <= minlevel && outsize > 0)
     {
         fprintf(stderr, "%s", buffer);
-		abort();
+    }
+    if(log_level <= G_LOG_LEVEL_ERROR)
+    {
+        fprintf(stderr, "%s", buffer);
+        abort();
     }
 }
 
