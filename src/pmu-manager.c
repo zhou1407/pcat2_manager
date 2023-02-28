@@ -606,6 +606,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     guint8 board_temp = 0;
     guint i;
     gint64 now;
+    guint rtc_status = 0;
 
     if(len < 16)
     {
@@ -625,10 +626,12 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
 
     if(len >= 18)
     {
+        rtc_status = data[16];
         board_temp = data[17];
     }
 
-    g_debug("PMU time: %d-%d-%d %02d:%02d:%02d", y, m, d, h, min, s);
+    g_debug("PMU time: %d-%d-%d %02d:%02d:%02d, status: %u",
+        y, m, d, h, min, s, rtc_status);
 
     now = g_get_monotonic_time();
 
