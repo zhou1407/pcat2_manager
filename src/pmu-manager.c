@@ -628,7 +628,12 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         board_temp = data[17];
     }
 
-    if(pmu_data->system_time_set_flag)
+    g_debug("PMU time: %d-%d-%d %02d:%02d:%02d", y, m, d, h, min, s);
+
+    now = g_get_monotonic_time();
+
+    if(pmu_data->system_time_set_flag &&
+        (now > pmu_data->pmu_time_set_timestamp + 15000000L))
     {
         pmu_dt = g_date_time_new_utc(y, m, d, h, min, (gdouble)s);
         if(pmu_dt!=NULL)
@@ -645,11 +650,8 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         host_unix_time = g_date_time_to_unix(host_dt);
         g_date_time_unref(host_dt);
 
-        now = g_get_monotonic_time();
-
-        if((now > pmu_data->pmu_time_set_timestamp + 15000000L) &&
-            (pmu_unix_time - host_unix_time > 60 ||
-            host_unix_time - pmu_unix_time > 60))
+        if(pmu_unix_time > host_unix_time + 60 ||
+            host_unix_time > pmu_unix_time + 60)
         {
             g_message("PMU time out of sync: %d-%d-%d %02d:%02d:%02d, "
                 "send time sync command.", y, m, d, h, min, s);
@@ -680,7 +682,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
                 y, m, d, h, min, s);
         }
 
-        pmu_data->pmu_time_set_timestamp = g_get_monotonic_time();
+        pmu_data->pmu_time_set_timestamp = now;
 
         pmu_data->system_time_set_flag = TRUE;
     }
