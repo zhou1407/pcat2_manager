@@ -680,6 +680,8 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
                 y, m, d, h, min, s);
         }
 
+        pmu_data->pmu_time_set_timestamp = g_get_monotonic_time();
+
         pmu_data->system_time_set_flag = TRUE;
     }
 
