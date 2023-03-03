@@ -902,9 +902,21 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                     continue;
                 }
 
+                if(json_object_object_get_ex(interface, "up", &child))
+                {
+                    if(g_strcmp0(json_object_get_string(child), "true")!=0)
+                    {
+                        continue;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+
                 if(json_object_object_get_ex(interface, "status", &child))
                 {
-                    if(g_strcmp0(json_object_get_string(child), "online")!=0)
+                    if(g_strcmp0(json_object_get_string(child), "error")==0)
                     {
                         mwan3_interface_check_flag = FALSE;
 
