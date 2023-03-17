@@ -768,6 +768,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
     gboolean iface_status[PCAT_MAIN_IFACE_LAST];
     gboolean mwan3_interface_check_flag;
     gint64 mwan3_interface_check_timestamp;
+    gboolean mwan3_status_all_not_running;
 
     mwan3_interface_check_timestamp = g_get_monotonic_time();
 
@@ -889,6 +890,8 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                 break;
             }
 
+            mwan3_status_all_not_running = TRUE;
+
             for(i=0;i<PCAT_MAIN_IFACE_LAST;i++)
             {
                 if(!iface_status[i])
@@ -914,6 +917,14 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                     continue;
                 }
 
+                if(json_object_object_get_ex(interface, "running", &child))
+                {
+                    if(g_strcmp0(json_object_get_string(child), "true")==0)
+                    {
+                        mwan3_status_all_not_running = FALSE;
+                    }
+                }
+
                 if(json_object_object_get_ex(interface, "status", &child))
                 {
                     if(g_strcmp0(json_object_get_string(child), "error")==0)
@@ -929,6 +940,11 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
 
                     break;
                 }
+            }
+
+            if(mwan3_status_all_not_running)
+            {
+                mwan3_interface_check_flag = FALSE;
             }
 
             if(mwan3_interface_check_flag)
