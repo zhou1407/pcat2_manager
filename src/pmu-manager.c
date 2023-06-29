@@ -12,6 +12,7 @@
 #include "common.h"
 
 #define PCAT_PMU_MANAGER_STATEFS_BATTERY_PATH "/run/state/namespaces/Battery"
+#define PCAT_PMU_MANAGER_FAKE_BATTERY_DEV "/dev/fake_battery"
 #define PCAT_PMU_MANAGER_COMMAND_TIMEOUT 1000000L
 #define PCAT_PMU_MANAGER_COMMAND_QUEUE_MAX 128
 
@@ -877,6 +878,21 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     if(fp!=NULL)
     {
         fprintf(fp, "%u\n", on_battery ? 1 : 0);
+        fclose(fp);
+    }
+
+    fp = fopen(PCAT_PMU_MANAGER_FAKE_BATTERY_DEV, "w");
+    if(fp!=NULL)
+    {
+        fprintf(fp, on_battery ? "charging = 0\n" : "charging = 1\n");
+        fclose(fp);
+    }
+
+    fp = fopen(PCAT_PMU_MANAGER_FAKE_BATTERY_DEV, "w");
+    if(fp!=NULL)
+    {
+        fprintf(fp, "capacity0 = %u\n",
+            pmu_data->last_battery_percentage / 100);
         fclose(fp);
     }
 }
