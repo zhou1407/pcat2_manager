@@ -490,7 +490,7 @@ static void pcat_pmu_manager_schedule_time_update_internal(
             PCAT_PMU_MANAGER_COMMAND_SCHEDULE_STARTUP_TIME_SET, FALSE, 0,
             NULL, 0, TRUE);
 
-        g_message("Cleared PMU schedule startup data.");)
+        g_message("Cleared PMU schedule startup data.");
     }
 }
 
