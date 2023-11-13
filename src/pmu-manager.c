@@ -473,8 +473,24 @@ static void pcat_pmu_manager_schedule_time_update_internal(
 
             g_message("Updated PMU schedule startup data.");
         }
+        else
+        {
+            pcat_pmu_serial_write_data_request(pmu_data,
+                PCAT_PMU_MANAGER_COMMAND_SCHEDULE_STARTUP_TIME_SET, FALSE, 0,
+                NULL, 0, TRUE);
+
+            g_message("Cleared PMU schedule startup data.");
+        }
 
         g_byte_array_unref(startup_setup_buffer);
+    }
+    else
+    {
+        pcat_pmu_serial_write_data_request(pmu_data,
+            PCAT_PMU_MANAGER_COMMAND_SCHEDULE_STARTUP_TIME_SET, FALSE, 0,
+            NULL, 0, TRUE);
+
+        g_message("Cleared PMU schedule startup data.");)
     }
 }
 
