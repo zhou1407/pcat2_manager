@@ -61,6 +61,7 @@ typedef struct _PCatManagerMainConfigData
     guint pm_charger_limit_voltage;
     guint pm_charger_fast_voltage;
     guint pm_battery_full_threshold;
+    guint pm_battery_charge_detection_threshold;
 
     gboolean debug_modem_external_exec_stdout_log;
     gboolean debug_output_log;

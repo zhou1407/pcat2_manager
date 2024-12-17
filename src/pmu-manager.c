@@ -629,10 +629,19 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
     guint i;
     gint64 now;
     guint rtc_status = 0;
+    const PCatManagerMainConfigData *config_data;
+    guint charge_detection_threshold = 4200;
 
     if(len < 16)
     {
         return;
+    }
+
+    config_data = pcat_main_config_data_get();
+    if(config_data->pm_battery_charge_detection_threshold > 0)
+    {
+        charge_detection_threshold =
+            config_data->pm_battery_charge_detection_threshold;
     }
 
     battery_voltage = data[0] + ((guint16)data[1] << 8);
@@ -718,7 +727,7 @@ static void pcat_pmu_serial_status_data_parse(PCatPMUManagerData *pmu_data,
         "GPIO input state %X, output state %X.", battery_voltage,
         charger_voltage, gpio_input, gpio_output);
 
-    on_battery = (charger_voltage < 4200);
+    on_battery = (charger_voltage < charge_detection_threshold);
 
     if(!!pmu_data->last_on_battery_state != !!on_battery)
     {
@@ -1326,6 +1335,7 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
     gint64 now;
     guint modem_power_usage;
     guint shutdown_voltage = 0;
+    guint charge_detection_threshold = 4200;
 
     if(pmu_data->serial_channel==NULL)
     {
@@ -1334,8 +1344,16 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
         return TRUE;
     }
 
+    config_data = pcat_main_config_data_get();
+
+    if(config_data->pm_battery_charge_detection_threshold > 0)
+    {
+        charge_detection_threshold =
+            config_data->pm_battery_charge_detection_threshold;
+    }
+
     now = g_get_monotonic_time();
-    if(pmu_data->last_charger_voltage >= 4200)
+    if(pmu_data->last_charger_voltage >= charge_detection_threshold)
     {
         pmu_data->charger_on_auto_start_last_timestamp = now;
     }
@@ -1450,8 +1468,6 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
             g_date_time_unref(dt);
         }
     }
-
-    config_data = pcat_main_config_data_get();
 
     modem_power_usage = pcat_modem_manager_device_power_usage_get();
 

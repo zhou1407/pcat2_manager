@@ -360,6 +360,18 @@ static gboolean pcat_main_config_data_load()
         g_pcat_main_config_data.pm_battery_full_threshold = 0;
     }
 
+    ivalue = g_key_file_get_integer(keyfile, "PowerManager",
+        "BatteryChargeDetectionThreshold", NULL);
+    if(ivalue!=0)
+    {
+        g_pcat_main_config_data.pm_battery_charge_detection_threshold =
+           ivalue;
+    }
+    else
+    {
+        g_pcat_main_config_data.pm_battery_charge_detection_threshold = 4200;
+    }
+
     ivalue = g_key_file_get_integer(keyfile, "Debug",
         "ModemExternalExecStdoutLog", NULL);
     g_pcat_main_config_data.debug_modem_external_exec_stdout_log =
