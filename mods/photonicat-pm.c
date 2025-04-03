@@ -138,6 +138,11 @@ struct pcat_pm_data {
 	u8 rtc_status;
 };
 
+typedef void (*pcat_pm_cmd_exec_func)(struct pcat_pm_data *pm_data,
+	const u8 *rawdata, size_t rawdata_len, u8 src, u8 dst,
+	u16 frame_num, u16 command, const u8 *extra_data,
+	u16 extra_data_len, bool need_ack);
+
 static inline u16 pcat_pm_compute_crc16(const u8 *data, size_t len) 
 {
 	u16 crc = 0xFFFF;
@@ -461,11 +466,43 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	mutex_unlock(&pm_data->charger_mutex);
 }
 
-static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data)
+static void pcat_pm_uart_cmd_exec(struct pcat_pm_data *pm_data,
+	const u8 *rawdata, size_t rawdata_len, u8 src, u8 dst, u16 frame_num,
+	u16 command, const u8 *extra_data, u16 extra_data_len, bool need_ack)
+{
+	if (dst!=0x1 && dst!=0x80 && dst!=0xFF)
+		return;
+
+	switch (command) {
+	case PCAT_PM_COMMAND_HOST_REQUEST_SHUTDOWN_ACK:
+		pm_data->poweroff_ok = true;
+		need_ack = false;
+		break;
+	case PCAT_PM_COMMAND_STATUS_REPORT:
+		pcat_pm_status_report_parse(
+			pm_data, extra_data, extra_data_len);
+		break;
+	case PCAT_PM_COMMAND_DATE_TIME_SYNC_ACK:
+		if (extra_data_len > 0 && extra_data[0])
+			dev_err(&pm_data->serdev->dev, "Failed to sync date: %d\n",
+				extra_data[0]);
+		break;
+	default:
+		dev_info(&pm_data->serdev->dev,
+			"Got command %X from %X to %X, frame num %d, "
+			"need ACK %d.\n", command, src, dst, frame_num, need_ack);		
+		break;
+	}
+	
+	if (need_ack)
+		pcat_pm_uart_write_data(pm_data, command+1, NULL, 0, false, 0);
+}
+
+static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data,
+	u8 *buffer, size_t *buffer_used, pcat_pm_cmd_exec_func cmd_exec_func)
 {
 	size_t used_size = 0, remaining_size;
-	size_t i;
-	u8 *buffer = pm_data->read_buffer;
+	size_t i = 0;
 	const u8 *p, *extra_data;
 	u16 expect_len, extra_data_len;
 	u16 checksum, rchecksum;
@@ -474,32 +511,36 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data)
 	bool need_ack;
 	u16 frame_num;
 	
-	if (pm_data->read_buffer_used < 13)
+	if (*buffer_used < 13)
 		return 0;
 
-	for (i=0;i<pm_data->read_buffer_used;i++) {
-		if (buffer[i]!=0xA5) {
+	while (i < *buffer_used) {
+		if (buffer[i] != 0xA5) {
 			used_size = i + 1;
+			i++;
 			continue;
 		}
 		
 		p = buffer + i;
-		remaining_size = pm_data->read_buffer_used - i;
+		remaining_size = *buffer_used - i;
 		used_size = i + 1;
 
 		if (remaining_size < 13)
 			break;
 
 		expect_len = p[5] + ((u16)p[6] << 8);
-		if (expect_len < 3 || expect_len > 512) {
+		if (expect_len < 3 || expect_len > 515) {
 			used_size = i + 1;
+			i++;
 			continue;
 		}
 
 		if (expect_len + 10 > remaining_size)
 			break;
-		if (p[9+expect_len]!=0x5A) {
+
+		if (p[9 + expect_len]!=0x5A) {
 			used_size = i + 1;
+			i++;
 			continue;
 		}
 		
@@ -510,8 +551,8 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data)
 			dev_err(&pm_data->serdev->dev,
 				"Serial port got incorrect checksum %X, "
 				"should be %X!", checksum ,rchecksum);
-			i += 9 + expect_len;
-			used_size = i + 1;
+			i += 10 + expect_len;
+			used_size = i;
 			continue;
 		}
 		
@@ -527,42 +568,17 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data)
 			extra_data = NULL;
 		need_ack = (p[6 + expect_len]!=0);
 		
-		if (dst==0x1 || dst==0x80 || dst==0xFF) {
-			switch (command) {
-			case PCAT_PM_COMMAND_HOST_REQUEST_SHUTDOWN_ACK:
-				pm_data->poweroff_ok = true;
-				need_ack = false;
-				break;
-			case PCAT_PM_COMMAND_STATUS_REPORT:
-				pcat_pm_status_report_parse(
-					pm_data, extra_data, extra_data_len);
-				break;
-			case PCAT_PM_COMMAND_DATE_TIME_SYNC_ACK:
-				if (extra_data_len > 0 && extra_data[0])
-					dev_err(&pm_data->serdev->dev,
-						"Failed to sync date: %d\n",
-						extra_data[0]);
-				break;
-			default:
-				dev_info(&pm_data->serdev->dev,
-					"Got command %X from %X to %X, frame num %d, "
-					"need ACK %d.\n", command, src, dst, frame_num, need_ack);		
-				break;
-			}
-		}
+		cmd_exec_func(pm_data, p, 10 + expect_len, src, dst, frame_num,
+			command, extra_data, extra_data_len, need_ack);
 		
-		if (need_ack)
-			pcat_pm_uart_write_data(pm_data, command+1,
-				NULL, 0, false, 0);
-		
-		i += 9 + expect_len;
-    		used_size = i + 1;
+		i += 10 + expect_len;
+    		used_size = i;
 	}
 	
 	if (used_size > 0) {
         	memmove(buffer, buffer + used_size,
-        		pm_data->read_buffer_used - used_size);
-        	pm_data->read_buffer_used -= used_size;
+        		*buffer_used - used_size);
+        	*buffer_used -= used_size;
 	}
 
 	return used_size;
@@ -589,7 +605,8 @@ static size_t pcat_pm_uart_serdev_receive_buf(
 			used_size += count - used_size;
 		}
 
-		pcat_pm_uart_receive_parse(pm_data);
+		pcat_pm_uart_receive_parse(pm_data, pm_data->read_buffer,
+			&pm_data->read_buffer_used, pcat_pm_uart_cmd_exec);
 	}
 
 	return count;
@@ -599,28 +616,6 @@ static const struct serdev_device_ops pcat_pm_serdev_ops = {
 	.receive_buf = pcat_pm_uart_serdev_receive_buf,
 	.write_wakeup = serdev_device_write_wakeup,
 };
-
-static int pcat_pm_uart_serdev_open(struct pcat_pm_data *pm_data)
-{
-	struct serdev_device *serdev = pm_data->serdev;
-	struct device *dev = &serdev->dev;
-	int ret;
-	
-	ret = devm_serdev_device_open(dev, serdev);
-	if (ret < 0)
-		return ret;
-		
-	ret = serdev_device_set_parity(serdev, SERDEV_PARITY_NONE);
-	if (ret < 0) {
-		dev_err(dev, "set parity failed\n");
-		return ret;
-	}
-
-	serdev_device_set_baudrate(serdev, pm_data->baudrate);
-	serdev_device_set_flow_control(serdev, false);
-
-	return 0;
-}
 
 static void pcat_pm_check_work(struct kthread_work *work)
 {
@@ -644,6 +639,47 @@ static enum hrtimer_restart pcat_pm_check_timer_expired(struct hrtimer *timer)
 	hrtimer_forward_now(timer, ms_to_ktime(1000));
 
 	return HRTIMER_RESTART;
+}
+
+static int pcat_pm_uart_serdev_open(struct pcat_pm_data *pm_data)
+{
+	struct serdev_device *serdev = pm_data->serdev;
+	struct device *dev = &serdev->dev;
+	int ret;
+	
+	ret = devm_serdev_device_open(dev, serdev);
+	if (ret < 0)
+		return ret;
+		
+	ret = serdev_device_set_parity(serdev, SERDEV_PARITY_NONE);
+	if (ret < 0) {
+		dev_err(dev, "set parity failed\n");
+		return ret;
+	}
+
+	serdev_device_set_baudrate(serdev, pm_data->baudrate);
+	serdev_device_set_flow_control(serdev, false);
+
+	pm_data->kworker = kthread_create_worker(0, "pcat-pm-kworker");
+	if (IS_ERR(pm_data->kworker)) {
+		ret = PTR_ERR(pm_data->kworker);
+		dev_err(dev, "Failed to create kworker: %d\n", ret);
+		return ret;
+	}
+
+	sched_set_fifo(pm_data->kworker->task);
+		
+	kthread_init_work(&pm_data->check_work, pcat_pm_check_work);
+	hrtimer_init(&pm_data->check_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
+	pm_data->check_timer.function = pcat_pm_check_timer_expired;
+	
+	hrtimer_start(&pm_data->check_timer, ms_to_ktime(1000), HRTIMER_MODE_REL_HARD);
+	
+	pcat_pm_watchdog_timeout_set(pm_data, PCAT_PM_WATCHDOG_DEFAULT_INTERVAL, 0);
+	pcat_pm_uart_write_data(pm_data, PCAT_PM_COMMAND_PMU_FW_VERSION_GET,
+		NULL, 0, true, 0);
+
+	return 0;
 }
 
 static int pcat_pm_charger_probe(struct pcat_pm_data *pm_data)
@@ -799,6 +835,7 @@ static int pcat_pm_rtc_probe(struct pcat_pm_data *pm_data)
 	pm_data->rtc->range_min = RTC_TIMESTAMP_BEGIN_2000;
 	pm_data->rtc->range_max = RTC_TIMESTAMP_END_2099;
 	pm_data->rtc->ops = &pcat_pm_rtcops;
+	pm_data->rtc_status = 2;
 
 	ret = devm_rtc_register_device(pm_data->rtc);
 	if (ret) {
@@ -880,7 +917,7 @@ static int pcat_pm_hwmon_probe(struct pcat_pm_data *pm_data)
 	int ret = 0;
 
 	pm_data->hwmon_dev = devm_hwmon_device_register_with_info(
-		&pm_data->serdev->dev, "pcat-pm-hwmon", pm_data,
+		&pm_data->serdev->dev, "pcat_pm_hwmon", pm_data,
 		&pcat_pm_hwmon_chip_info, NULL);
 		
 	if (IS_ERR(pm_data->hwmon_dev)) {
@@ -922,9 +959,10 @@ static struct file_operations pcat_pm_ctl_dev_ops = {
 static int pcat_pm_probe(struct serdev_device *serdev)
 {
 	struct pcat_pm_data *pm_data;
+	struct device *dev = &serdev->dev;
 	int ret;
 
-	pm_data = devm_kzalloc(&serdev->dev, sizeof(*pm_data), GFP_KERNEL);
+	pm_data = devm_kzalloc(dev, sizeof(*pm_data), GFP_KERNEL);
 	if (!pm_data)
 		return -ENOMEM;
 
@@ -933,12 +971,12 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	
 	mutex_init(&pm_data->charger_mutex);
 
-	if (device_property_read_u32(&serdev->dev, "baudrate",
+	if (device_property_read_u32(dev, "baudrate",
 				    &pm_data->baudrate)) {
 		pm_data->baudrate = 115200;
 	}
 	
-	if (device_property_read_u32(&serdev->dev, "force-poweroff-timeout",
+	if (device_property_read_u32(dev, "force-poweroff-timeout",
 				    &pm_data->force_poweroff_timeout)) {
 		pm_data->force_poweroff_timeout = 0;
 	}
@@ -946,53 +984,36 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	serdev_device_set_drvdata(serdev, pm_data);
 	serdev_device_set_client_ops(serdev, &pcat_pm_serdev_ops);
 	
-	pm_data->power_gpio = devm_gpiod_get(&serdev->dev,
-		"power", GPIOD_OUT_HIGH);
+	pm_data->power_gpio = devm_gpiod_get(dev, "power", GPIOD_OUT_HIGH);
 	if (IS_ERR(pm_data->power_gpio)) {
-		dev_err(&serdev->dev, "Failed to setup power GPIO!\n");
+		dev_err(dev, "Failed to setup power GPIO!\n");
 	}
 
-        ret = devm_register_sys_off_handler(&serdev->dev, SYS_OFF_MODE_POWER_OFF_PREPARE,
+        ret = devm_register_sys_off_handler(dev, SYS_OFF_MODE_POWER_OFF_PREPARE,
 		SYS_OFF_PRIO_FIRMWARE, pcat_pm_do_poweroff, pm_data);
         if (ret)
-                dev_err(&serdev->dev, "Cannot register poweroff handler: %d\n", ret);
+                dev_err(dev, "Cannot register poweroff handler: %d\n", ret);
 
-        ret = devm_register_sys_off_handler(&serdev->dev, SYS_OFF_MODE_RESTART,
+        ret = devm_register_sys_off_handler(dev, SYS_OFF_MODE_RESTART,
 		SYS_OFF_PRIO_HIGH, pcat_pm_do_restart, pm_data);
         if (ret)
-                dev_err(&serdev->dev, "Cannot register poweroff handler: %d\n", ret);
+                dev_err(dev, "Cannot register poweroff handler: %d\n", ret);
 
-	do {
-		ret = pcat_pm_uart_serdev_open(pm_data);
-		if (ret) {
-			dev_err(&serdev->dev, "Cannot open serial device: %d\n", ret);
-			break;
-		}
-		
-		pm_data->kworker = kthread_create_worker(0, "pcat-pm-kworker");
-		if (IS_ERR(pm_data->kworker)) {
-			dev_err(&serdev->dev, "Failed to create kworker!\n");
-			break;
-		}
-		sched_set_fifo(pm_data->kworker->task);
-		
-		kthread_init_work(&pm_data->check_work, pcat_pm_check_work);
-		hrtimer_init(&pm_data->check_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_HARD);
-		pm_data->check_timer.function = pcat_pm_check_timer_expired;
-		
-		hrtimer_start(&pm_data->check_timer, ms_to_ktime(1000), HRTIMER_MODE_REL_HARD);
-		
-		pcat_pm_watchdog_timeout_set(pm_data, PCAT_PM_WATCHDOG_DEFAULT_INTERVAL, 0);
-		pcat_pm_uart_write_data(pm_data, PCAT_PM_COMMAND_PMU_FW_VERSION_GET,
-			NULL, 0, true, 0);
-		
-	} while (0);
+	ret = pcat_pm_uart_serdev_open(pm_data);
+	if (ret)
+		dev_err(dev, "Cannot open serial device: %d\n", ret);
 	
 	ret = pcat_pm_charger_probe(pm_data);
+	if (ret)
+		dev_err(dev, "Failed to probe charger: %d\n", ret);
 
 	ret = pcat_pm_rtc_probe(pm_data);
+	if (ret)
+		dev_err(dev, "Failed to probe RTC: %d\n", ret);
 	
 	ret = pcat_pm_hwmon_probe(pm_data);
+	if (ret)
+		dev_err(dev, "Failed to probe hwmon: %d\n", ret);
 
 	pm_data->ctl_device.minor = MISC_DYNAMIC_MINOR;
 	pm_data->ctl_device.name = "pcat-pm-ctl";
@@ -1000,9 +1021,9 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	pm_data->ctl_device.mode = 0;
 	ret = misc_register(&pm_data->ctl_device);
 	if (ret)
-		dev_err(&serdev->dev, "Failed to register control device: %d\n", ret);
+		dev_err(dev, "Failed to register control device: %d\n", ret);
 	
-	dev_info(&serdev->dev, "photonicat power manager initialized OK.\n");
+	dev_info(dev, "photonicat power manager initialized OK.\n");
 
 	return 0;
 }
