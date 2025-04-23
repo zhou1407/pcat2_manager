@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <errno.h>
 #include <termios.h>
-#include <gpiod.h>
 #include <libusb.h>
 #include <gio/gio.h>
 #include "modem-manager.h"
@@ -48,13 +47,6 @@ typedef struct _PCatModemManagerData
     gchar *isp_plmn;
 
     libusb_context *usb_ctx;
-
-    struct gpiod_chip *gpio_modem_power_chip;
-    struct gpiod_chip *gpio_modem_rf_kill_chip;
-    struct gpiod_chip *gpio_modem_reset_chip;
-    struct gpiod_line *gpio_modem_power_line;
-    struct gpiod_line *gpio_modem_rf_kill_line;
-    struct gpiod_line *gpio_modem_reset_line;
 
     GSubprocess *external_control_exec_process;
     GInputStream *external_control_exec_stdout_stream;
@@ -107,212 +99,6 @@ static PCatModemManagerUSBData g_pcat_modem_manager_supported_dev_list[] =
 };
 
 static PCatModemManagerData g_pcat_modem_manager_data = {0};
-
-static inline gboolean pcat_modem_manager_modem_power_init(
-    PCatModemManagerData *mm_data, PCatManagerMainConfigData *main_config_data)
-{
-    guint i;
-    gint ret;
-
-    g_message("Start Modem power initialization.");
-
-    mm_data->modem_rfkill_state = FALSE;
-
-    if(main_config_data->hw_gpio_modem_power_chip==NULL)
-    {
-        g_warning("Modem power GPIO chip not configured!");
-
-        return FALSE;
-    }
-
-    if(main_config_data->hw_gpio_modem_reset_chip==NULL)
-    {
-        g_warning("Modem reset GPIO chip not configured!");
-
-        return FALSE;
-    }
-
-    if(mm_data->gpio_modem_power_chip==NULL)
-    {
-        mm_data->gpio_modem_power_chip = gpiod_chip_open_by_name(
-            main_config_data->hw_gpio_modem_power_chip);
-        if(mm_data->gpio_modem_power_chip==NULL)
-        {
-            g_warning("Failed to open Modem power GPIO chip!");
-
-            return FALSE;
-        }
-    }
-
-    if(mm_data->gpio_modem_rf_kill_chip==NULL &&
-        main_config_data->hw_gpio_modem_rf_kill_chip!=NULL &&
-        *(main_config_data->hw_gpio_modem_rf_kill_chip)!='\0')
-    {
-        mm_data->gpio_modem_rf_kill_chip = gpiod_chip_open_by_name(
-            main_config_data->hw_gpio_modem_rf_kill_chip);
-        if(mm_data->gpio_modem_rf_kill_chip==NULL)
-        {
-            g_warning("Failed to open Modem RF Kill GPIO chip!");
-        }
-    }
-
-    if(mm_data->gpio_modem_reset_chip==NULL)
-    {
-        mm_data->gpio_modem_reset_chip = gpiod_chip_open_by_name(
-            main_config_data->hw_gpio_modem_reset_chip);
-        if(mm_data->gpio_modem_reset_chip==NULL)
-        {
-            g_warning("Failed to open Modem reset GPIO chip!");
-
-            return FALSE;
-        }
-    }
-
-    if(mm_data->gpio_modem_power_line==NULL)
-    {
-        mm_data->gpio_modem_power_line = gpiod_chip_get_line(
-            mm_data->gpio_modem_power_chip,
-            main_config_data->hw_gpio_modem_power_line);
-        if(mm_data->gpio_modem_power_line==NULL)
-        {
-            g_warning("Failed to open Modem power GPIO line!");
-
-            return FALSE;
-        }
-    }
-    if(!gpiod_line_is_requested(mm_data->gpio_modem_power_line))
-    {
-        ret = gpiod_line_request_output(mm_data->gpio_modem_power_line,
-            "gpio-modem-power",
-            main_config_data->hw_gpio_modem_power_active_low ? 1 : 0);
-        if(ret!=0)
-        {
-            g_warning("Failed to request output on Modem power GPIO!");
-        }
-    }
-    else
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_power_line,
-            main_config_data->hw_gpio_modem_power_active_low ? 1 : 0);
-    }
-
-    if(mm_data->gpio_modem_rf_kill_line==NULL &&
-        mm_data->gpio_modem_rf_kill_chip!=NULL)
-    {
-        mm_data->gpio_modem_rf_kill_line = gpiod_chip_get_line(
-            mm_data->gpio_modem_rf_kill_chip,
-            main_config_data->hw_gpio_modem_rf_kill_line);
-        if(mm_data->gpio_modem_rf_kill_line==NULL)
-        {
-            g_warning("Failed to open Modem RF kill GPIO line!");
-        }
-    }
-
-    if(mm_data->gpio_modem_rf_kill_line!=NULL)
-    {
-        if(!gpiod_line_is_requested(mm_data->gpio_modem_rf_kill_line))
-        {
-            ret = gpiod_line_request_output(mm_data->gpio_modem_rf_kill_line,
-                "gpio-modem-rf-kill",
-                main_config_data->hw_gpio_modem_rf_kill_active_low ? 0 : 1);
-            if(ret!=0)
-            {
-                g_warning("Failed to request output on Modem RF kill GPIO!");
-            }
-        }
-        else
-        {
-            gpiod_line_set_value(mm_data->gpio_modem_rf_kill_line,
-                main_config_data->hw_gpio_modem_rf_kill_active_low ? 0 : 1);
-        }
-    }
-
-    if(mm_data->gpio_modem_reset_line==NULL)
-    {
-        mm_data->gpio_modem_reset_line = gpiod_chip_get_line(
-            mm_data->gpio_modem_reset_chip,
-            main_config_data->hw_gpio_modem_reset_line);
-        if(mm_data->gpio_modem_reset_line==NULL)
-        {
-            g_warning("Failed to open Modem reset GPIO line!");
-
-            return FALSE;
-        }
-    }
-    if(!gpiod_line_is_requested(mm_data->gpio_modem_reset_line))
-    {
-        ret = gpiod_line_request_output(mm_data->gpio_modem_reset_line,
-            "gpio-modem-reset",
-            main_config_data->hw_gpio_modem_reset_active_low ? 1 : 0);
-        if(ret!=0)
-        {
-            g_warning("Failed to request output on Modem reset GPIO!");
-        }
-    }
-    else
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_reset_line,
-            main_config_data->hw_gpio_modem_reset_active_low ? 1 : 0);
-    }
-
-    for(i=0;i<PCAT_MODEM_MANAGER_POWER_WAIT_TIME && mm_data->work_flag;i++)
-    {
-        g_usleep(100000);
-    }
-    if(!mm_data->work_flag)
-    {
-        return FALSE;
-    }
-
-    gpiod_line_set_value(mm_data->gpio_modem_power_line,
-        main_config_data->hw_gpio_modem_power_active_low ? 0 : 1);
-    if(mm_data->gpio_modem_rf_kill_line!=NULL)
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_rf_kill_line,
-            main_config_data->hw_gpio_modem_rf_kill_active_low ? 1 : 0);
-    }
-    gpiod_line_set_value(mm_data->gpio_modem_reset_line,
-        main_config_data->hw_gpio_modem_reset_active_low ? 1 : 0);
-
-    for(i=0;i<PCAT_MODEM_MANAGER_POWER_READY_TIME && mm_data->work_flag;i++)
-    {
-        g_usleep(100000);
-    }
-    if(!mm_data->work_flag)
-    {
-        return FALSE;
-    }
-
-    g_message("Modem power on successfully.");
-
-    gpiod_line_set_value(mm_data->gpio_modem_reset_line,
-        main_config_data->hw_gpio_modem_reset_active_low ? 0 : 1);
-
-    for(i=0;i<PCAT_MODEM_MANAGER_RESET_ON_TIME && mm_data->work_flag;i++)
-    {
-        g_usleep(100000);
-    }
-    if(!mm_data->work_flag)
-    {
-        return FALSE;
-    }
-
-    gpiod_line_set_value(mm_data->gpio_modem_reset_line,
-        main_config_data->hw_gpio_modem_reset_active_low ? 1 : 0);
-
-    for(i=0;i<PCAT_MODEM_MANAGER_RESET_WAIT_TIME && mm_data->work_flag;i++)
-    {
-        g_usleep(100000);
-    }
-    if(!mm_data->work_flag)
-    {
-        return FALSE;
-    }
-
-    g_message("Modem power initialization completed.");
-
-    return TRUE;
-}
 
 static inline void pcat_modem_manager_external_control_exec_line_parser(
     PCatModemManagerData *mm_data, const guint8 *buffer, gssize size)
@@ -859,11 +645,8 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
     gpointer user_data)
 {
     PCatModemManagerData *mm_data = (PCatModemManagerData *)user_data;
-    PCatManagerMainConfigData *main_config_data;
     gboolean modem_exist = FALSE;
     guint i;
-
-    main_config_data = pcat_main_config_data_get();
 
     while(mm_data->work_flag)
     {
@@ -871,8 +654,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
         {
             case PCAT_MODEM_MANAGER_STATE_NONE:
             {
-                pcat_modem_manager_modem_power_init(mm_data,
-                    main_config_data);
                 mm_data->state = PCAT_MODEM_MANAGER_STATE_READY;
 
                 break;
@@ -976,47 +757,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
     if(mm_data->external_control_exec_process!=NULL)
     {
         g_subprocess_force_exit(mm_data->external_control_exec_process);
-    }
-
-    if(mm_data->gpio_modem_reset_line!=NULL)
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_reset_line,
-            main_config_data->hw_gpio_modem_reset_active_low ? 1 : 0);
-
-        gpiod_line_release(mm_data->gpio_modem_reset_line);
-        mm_data->gpio_modem_reset_line = NULL;
-    }
-    if(mm_data->gpio_modem_rf_kill_line!=NULL)
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_rf_kill_line,
-            main_config_data->hw_gpio_modem_rf_kill_active_low ? 0 : 1);
-
-        gpiod_line_release(mm_data->gpio_modem_rf_kill_line);
-        mm_data->gpio_modem_rf_kill_line = NULL;
-    }
-    if(mm_data->gpio_modem_power_line!=NULL)
-    {
-        gpiod_line_set_value(mm_data->gpio_modem_power_line,
-            main_config_data->hw_gpio_modem_power_active_low ? 1 : 0);
-
-        gpiod_line_release(mm_data->gpio_modem_power_line);
-        mm_data->gpio_modem_power_line = NULL;
-    }
-
-    if(mm_data->gpio_modem_reset_chip!=NULL)
-    {
-        gpiod_chip_close(mm_data->gpio_modem_reset_chip);
-        mm_data->gpio_modem_reset_chip = NULL;
-    }
-    if(mm_data->gpio_modem_rf_kill_chip!=NULL)
-    {
-        gpiod_chip_close(mm_data->gpio_modem_rf_kill_chip);
-        mm_data->gpio_modem_rf_kill_chip = NULL;
-    }
-    if(mm_data->gpio_modem_power_chip!=NULL)
-    {
-        gpiod_chip_close(mm_data->gpio_modem_power_chip);
-        mm_data->gpio_modem_power_chip = NULL;
     }
 
     return NULL;
@@ -1225,8 +965,6 @@ PCatModemManagerDeviceType pcat_modem_manager_device_type_get()
 
 void pcat_modem_manager_device_rfkill_mode_set(gboolean state)
 {
-    PCatManagerMainConfigData *main_config_data;
-    gint value;
     gchar *command[] = {"/usr/sbin/rfkill", "unblock", "wwan", NULL};
 
     if(!!g_pcat_modem_manager_data.modem_rfkill_state==!!state)
@@ -1235,7 +973,6 @@ void pcat_modem_manager_device_rfkill_mode_set(gboolean state)
     }
 
     g_pcat_modem_manager_data.modem_rfkill_state = state;
-    main_config_data = pcat_main_config_data_get();
 
     if(state)
     {
@@ -1243,21 +980,6 @@ void pcat_modem_manager_device_rfkill_mode_set(gboolean state)
     }
     g_spawn_async(NULL, command, NULL, G_SPAWN_DEFAULT,
         NULL, NULL, NULL, NULL);
-
-    if(g_pcat_modem_manager_data.gpio_modem_rf_kill_line!=NULL)
-    {
-        if(state)
-        {
-            value = main_config_data->hw_gpio_modem_rf_kill_active_low ? 0 : 1;
-        }
-        else
-        {
-            value = main_config_data->hw_gpio_modem_rf_kill_active_low ? 1 : 0;
-        }
-
-        gpiod_line_set_value(
-            g_pcat_modem_manager_data.gpio_modem_rf_kill_line, value);
-    }
 
     if(state)
     {

@@ -17,7 +17,6 @@
 
 #define PCAT_MAIN_CONFIG_FILE "/etc/pcat-manager.conf"
 #define PCAT_MAIN_USER_CONFIG_FILE "/etc/pcat-manager-userdata.conf"
-#define PCAT_MAIN_SHUTDOWN_REQUEST_FILE "/tmp/pcat-shutdown.tmp"
 
 #define PCAT_MAIN_LOG_FILE "/tmp/pcat-manager.log"
 
@@ -54,18 +53,10 @@ const PCatManagerRouteMode g_pcat_main_iface_route_mode[
     PCAT_MANAGER_ROUTE_MODE_MOBILE
 };
 
-static const guint g_pcat_main_shutdown_wait_max = 30;
-
 static gboolean g_pcat_main_cmd_daemonsize = FALSE;
 static gboolean g_pcat_main_cmd_distro = FALSE;
 
 static GMainLoop *g_pcat_main_loop = NULL;
-static gboolean g_pcat_main_shutdown = FALSE;
-static gboolean g_pcat_main_reboot = FALSE;
-static gboolean g_pcat_main_request_shutdown = FALSE;
-static gboolean g_pcat_main_request_shutdown_send_pmu_request = TRUE;
-static guint g_pcat_main_shutdown_wait_count = 0;
-static gboolean g_pcat_main_watchdog_disabled = FALSE;
 
 static gboolean g_pcat_main_net_status_led_work_mode = TRUE;
 static guint g_pcat_main_status_check_timeout_id = 0;
@@ -94,9 +85,6 @@ static GOptionEntry g_pcat_cmd_entries[] =
 
 static void pcat_main_config_data_clear()
 {
-    g_free(g_pcat_main_config_data.pm_serial_device);
-    g_pcat_main_config_data.pm_serial_device = NULL;
-
     g_pcat_main_config_data.valid = FALSE;
 }
 
@@ -105,9 +93,6 @@ static gboolean pcat_main_config_data_load()
     GKeyFile *keyfile;
     GError *error = NULL;
     gint ivalue;
-    gint *ivlist;
-    gsize ivlist_size;
-    guint i;
 
     g_pcat_main_config_data.valid = FALSE;
 
@@ -125,119 +110,12 @@ static gboolean pcat_main_config_data_load()
         return FALSE;
     }
 
-    if(g_pcat_main_config_data.hw_gpio_modem_power_chip!=NULL)
-    {
-        g_free(g_pcat_main_config_data.hw_gpio_modem_power_chip);
-    }
-    g_pcat_main_config_data.hw_gpio_modem_power_chip =
-        g_key_file_get_string(keyfile, "Hardware", "GPIOModemPowerChip", NULL);
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemPowerLine", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_power_line = ivalue;
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemPowerActiveLow", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_power_active_low =
-        (ivalue!=0);
-
-    if(g_pcat_main_config_data.hw_gpio_modem_rf_kill_chip!=NULL)
-    {
-        g_free(g_pcat_main_config_data.hw_gpio_modem_rf_kill_chip);
-    }
-    g_pcat_main_config_data.hw_gpio_modem_rf_kill_chip =
-        g_key_file_get_string(keyfile, "Hardware", "GPIOModemRFKillChip", NULL);
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemRFKillLine", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_rf_kill_line = ivalue;
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemRFKillActiveLow", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_rf_kill_active_low =
-        (ivalue!=0);
-
-    if(g_pcat_main_config_data.hw_gpio_modem_reset_chip!=NULL)
-    {
-        g_free(g_pcat_main_config_data.hw_gpio_modem_reset_chip);
-    }
-    g_pcat_main_config_data.hw_gpio_modem_reset_chip =
-        g_key_file_get_string(keyfile, "Hardware", "GPIOModemResetChip", NULL);
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemResetLine", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_reset_line = ivalue;
-
-    ivalue = g_key_file_get_integer(keyfile, "Hardware",
-        "GPIOModemResetActiveLow", NULL);
-    g_pcat_main_config_data.hw_gpio_modem_reset_active_low =
-        (ivalue!=0);
-
     memset(g_pcat_main_config_data.pm_battery_discharge_table_normal, 0,
         sizeof(guint) * 11);
     memset(g_pcat_main_config_data.pm_battery_discharge_table_5g, 0,
         sizeof(guint) * 11);
     memset(g_pcat_main_config_data.pm_battery_charge_table, 0,
         sizeof(guint) * 11);
-
-    ivlist = g_key_file_get_integer_list(keyfile, "PowerManager",
-        "BatteryDischargeTableNormal", &ivlist_size, NULL);
-    if(ivlist!=NULL)
-    {
-        if(ivlist_size >= 11)
-        {
-            for(i=0;i<11;i++)
-            {
-                g_pcat_main_config_data.pm_battery_discharge_table_normal[i] =
-                    ivlist[i];
-            }
-        }
-
-        g_free(ivlist);
-    }
-
-    ivlist = g_key_file_get_integer_list(keyfile, "PowerManager",
-        "BatteryDischargeTable5G", &ivlist_size, NULL);
-    if(ivlist!=NULL)
-    {
-        if(ivlist_size >= 11)
-        {
-            for(i=0;i<11;i++)
-            {
-                g_pcat_main_config_data.pm_battery_discharge_table_5g[i] =
-                    ivlist[i];
-            }
-        }
-
-        g_free(ivlist);
-    }
-
-    ivlist = g_key_file_get_integer_list(keyfile, "PowerManager",
-        "BatteryChargeTable", &ivlist_size, NULL);
-    if(ivlist!=NULL)
-    {
-        if(ivlist_size >= 11)
-        {
-            for(i=0;i<11;i++)
-            {
-                g_pcat_main_config_data.pm_battery_charge_table[i] =
-                    ivlist[i];
-            }
-        }
-
-        g_free(ivlist);
-    }
-
-    if(g_pcat_main_config_data.pm_serial_device!=NULL)
-    {
-        g_free(g_pcat_main_config_data.pm_serial_device);
-    }
-    g_pcat_main_config_data.pm_serial_device = g_key_file_get_string(
-        keyfile, "PowerManager", "SerialDevice", NULL);
-
-    ivalue = g_key_file_get_integer(keyfile, "PowerManager",
-        "SerialBaud", NULL);
-    g_pcat_main_config_data.pm_serial_baud = ivalue;
 
     ivalue = g_key_file_get_integer(keyfile, "PowerManager",
         "AutoShutdownVoltageGeneral", NULL);
@@ -637,128 +515,14 @@ static gboolean pcat_main_user_config_data_save()
     return TRUE;
 }
 
-static gboolean pcat_main_shutdown_check_timeout_func(
-    gpointer user_data)
-{
-    if(pcat_pmu_manager_shutdown_completed())
-    {
-        if(g_pcat_main_loop!=NULL)
-        {
-            g_main_loop_quit(g_pcat_main_loop);
-
-            return FALSE;
-        }
-    }
-    else if(g_pcat_main_shutdown_wait_count > g_pcat_main_shutdown_wait_max)
-    {
-        g_warning("PMU shutdown request timeout!");
-
-        if(g_pcat_main_loop!=NULL)
-        {
-            g_main_loop_quit(g_pcat_main_loop);
-
-            return FALSE;
-        }
-    }
-
-    g_pcat_main_shutdown_wait_count++;
-
-    return TRUE;
-}
-
-static gboolean pcat_main_reboot_check_timeout_func(
-    gpointer user_data)
-{
-    if(pcat_pmu_manager_reboot_completed())
-    {
-        if(g_pcat_main_loop!=NULL)
-        {
-            g_main_loop_quit(g_pcat_main_loop);
-
-            return FALSE;
-        }
-    }
-    else if(g_pcat_main_shutdown_wait_count > g_pcat_main_shutdown_wait_max)
-    {
-        g_warning("PMU reboot request timeout!");
-
-        if(g_pcat_main_loop!=NULL)
-        {
-            g_main_loop_quit(g_pcat_main_loop);
-
-            return FALSE;
-        }
-    }
-
-    g_pcat_main_shutdown_wait_count++;
-
-    return TRUE;
-}
-
-static void pcat_main_system_shutdown()
-{
-    if(g_pcat_main_shutdown)
-    {
-        return;
-    }
-
-    if(g_pcat_main_request_shutdown_send_pmu_request)
-    {
-        pcat_pmu_manager_shutdown_request();
-        g_timeout_add_seconds(1,
-            pcat_main_shutdown_check_timeout_func, NULL);
-    }
-    else
-    {
-        g_main_loop_quit(g_pcat_main_loop);
-    }
-
-    g_pcat_main_shutdown = TRUE;
-}
-
-static void pcat_main_system_reboot()
-{
-    if(g_pcat_main_reboot)
-    {
-        return;
-    }
-
-    pcat_pmu_manager_reboot_request();
-    g_timeout_add_seconds(1,
-        pcat_main_reboot_check_timeout_func, NULL);
-
-    g_pcat_main_reboot = TRUE;
-}
-
 static gboolean pcat_main_sigterm_func(gpointer user_data)
 {
     g_message("SIGTERM detected.");
 
-    if(g_pcat_main_request_shutdown ||
-        g_file_test(PCAT_MAIN_SHUTDOWN_REQUEST_FILE,
-        G_FILE_TEST_IS_REGULAR | G_FILE_TEST_EXISTS))
+    if(g_pcat_main_loop!=NULL)
     {
-        pcat_main_system_shutdown();
+        g_main_loop_quit(g_pcat_main_loop);
     }
-    else if(!g_pcat_main_watchdog_disabled)
-    {
-        pcat_main_system_reboot();
-    }
-    else
-    {
-        if(g_pcat_main_loop!=NULL)
-        {
-            g_main_loop_quit(g_pcat_main_loop);
-        }
-    }
-
-    return TRUE;
-}
-
-static gboolean pcat_main_sigusr1_func(gpointer user_data)
-{
-    g_pcat_main_watchdog_disabled = TRUE;
-    pcat_pmu_manager_watchdog_timeout_set(0);
 
     return TRUE;
 }
@@ -1406,7 +1170,6 @@ int main(int argc, char *argv[])
 
     signal(SIGPIPE, SIG_IGN);
     g_unix_signal_add(SIGTERM, pcat_main_sigterm_func, NULL);
-    g_unix_signal_add(SIGUSR1, pcat_main_sigusr1_func, NULL);
 
     g_pcat_main_loop = g_main_loop_new(NULL, FALSE);
 
@@ -1492,13 +1255,6 @@ PCatManagerMainConfigData *pcat_main_config_data_get()
 PCatManagerUserConfigData *pcat_main_user_config_data_get()
 {
     return &g_pcat_main_user_config_data;
-}
-
-void pcat_main_request_shutdown(gboolean send_pmu_request)
-{
-    g_pcat_main_request_shutdown = TRUE;
-    g_pcat_main_request_shutdown_send_pmu_request = send_pmu_request;
-    g_spawn_command_line_async("poweroff", NULL);
 }
 
 void pcat_main_user_config_data_sync()
