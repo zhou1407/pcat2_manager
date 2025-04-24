@@ -608,6 +608,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     {
         fscanf(fp, "%u", &battery_voltage);
         battery_voltage /= 1000;
+        fclose(fp);
     }
 
     fname = g_build_filename(PCAT_PMU_MANAGER_BATTERY_SYSFS_PATH,
@@ -617,6 +618,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     if(fp!=NULL)
     {
         fscanf(fp, "%u", &battery_percentage);
+        fclose(fp);
     }
 
     fname = g_build_filename(PCAT_PMU_MANAGER_CHARGER_SYSFS_PATH,
@@ -627,6 +629,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     {
         fscanf(fp, "%u", &charger_voltage);
         battery_voltage /= 1000;
+        fclose(fp);
     }
 
     fname = g_build_filename(PCAT_PMU_MANAGER_CHARGER_SYSFS_PATH,
@@ -637,6 +640,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     {
         fscanf(fp, "%u", &charger_online);
         on_battery = !charger_online;
+        fclose(fp);
     }
 
     if(pmu_data->board_hwmon_device_path!=NULL)
@@ -645,6 +649,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
         if(fp!=NULL)
         {
             fscanf(fp, "%d", &board_temp);
+            fclose(fp);
         }
     }
 
