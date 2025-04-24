@@ -162,6 +162,28 @@ static inline guint16 pcat_pmu_compute_crc16(const guint8 *data,
     return crc;
 }
 
+static void pcat_pmu_poweroff_request(PCatPMUManagerData *pmu_data)
+{
+    GError *error = NULL;
+
+    if(pmu_data->shutdown_request)
+    {
+        return;
+    }
+
+    if(g_spawn_command_line_async("poweroff", &error))
+    {
+        pmu_data->shutdown_request = TRUE;
+
+        g_message("Request poweroff.");
+    }
+    else
+    {
+        g_warning("Failed to poweroff: %s!",
+            error!=NULL ? error->message : "Unknown");
+    }
+}
+
 static gboolean pcat_pmu_pm_dev_write_watch_func(GIOChannel *source,
     GIOCondition condition, gpointer user_data)
 {
@@ -626,9 +648,6 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
         }
     }
 
-    g_debug("PMU report battery voltage %u mV, charger voltage %u mV.",
-        battery_voltage, charger_voltage);
-
     on_battery = (charger_voltage < charge_detection_threshold);
 
     if(!!pmu_data->last_on_battery_state != !!on_battery)
@@ -788,9 +807,7 @@ static void pcat_pmu_pm_dev_read_data_parse(PCatPMUManagerData *pmu_data)
                 {
                     case PCAT_PMU_MANAGER_COMMAND_PMU_REQUEST_SHUTDOWN:
                     {
-                        g_message("PMU request poweroff.");
-
-                        g_spawn_command_line_async("poweroff", NULL);
+                        pcat_pmu_poweroff_request(pmu_data);
 
                         if(need_ack)
                         {
@@ -1022,9 +1039,8 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
                now > pmu_data->charger_on_auto_start_last_timestamp +
                (gint64)uconfig_data->charger_on_auto_start_timeout * 1000000L)
             {
-                g_spawn_command_line_async("poweroff", NULL);
+                pcat_pmu_poweroff_request(pmu_data);
                 pmu_data->shutdown_planned = TRUE;
-                pmu_data->shutdown_request = TRUE;
             }
         }
         else if(uconfig_data->power_schedule_data!=NULL &&
@@ -1113,9 +1129,8 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
 
                 if(need_action)
                 {
-                    g_spawn_command_line_async("poweroff", NULL);
+                    pcat_pmu_poweroff_request(pmu_data);
                     pmu_data->shutdown_planned = TRUE;
-                    pmu_data->shutdown_request = TRUE;
                 }
             }
 
