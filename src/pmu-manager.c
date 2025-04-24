@@ -788,6 +788,8 @@ static void pcat_pmu_pm_dev_read_data_parse(PCatPMUManagerData *pmu_data)
                 {
                     case PCAT_PMU_MANAGER_COMMAND_PMU_REQUEST_SHUTDOWN:
                     {
+                        g_message("PMU request poweroff.");
+
                         g_spawn_command_line_async("poweroff", NULL);
 
                         if(need_ack)

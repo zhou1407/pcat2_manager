@@ -406,9 +406,7 @@ static int pcat_pm_do_poweroff(struct sys_off_data *data)
 
 	if (!IS_ERR(pm_data->power_gpio))
 		gpiod_direction_output(pm_data->power_gpio, 0);
-	mdelay(1000);
-
-	WARN_ON(1);
+	mdelay(100);
 
 	return NOTIFY_DONE;
 }
