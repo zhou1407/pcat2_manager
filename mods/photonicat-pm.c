@@ -27,6 +27,8 @@
 #include <linux/miscdevice.h>
 #include <linux/thermal.h>
 #include <linux/poll.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
 
 #define PCAT_PM_BUFFER_SIZE 4096
 #define PCAT_PM_WATCHDOG_DEFAULT_INTERVAL 10
@@ -62,6 +64,8 @@ typedef enum {
 	PCAT_PM_COMMAND_POWER_ON_EVENT_GET_ACK = 0x1C,
 	PCAT_PM_COMMAND_FAN_SET = 0x93,
 	PCAT_PM_COMMAND_FAN_SET_ACK = 0x94,
+	PCAT_PM_COMMAND_DEVICE_MOVEMENT = 0x95,
+	PCAT_PM_COMMAND_DEVICE_MOVEMENT_ACK = 0x96,
 }PCatPMCommandType;
 
 static enum power_supply_property pcat_pm_battery_v1_properties[] = {
@@ -109,6 +113,7 @@ struct pcat_pm_data {
 	struct mutex ctl_mutex;
 	wait_queue_head_t ctl_wait;
 	struct thermal_cooling_device *cdev;
+	struct kobject kobject;
 	
 	u32 pm_version;
 	bool work_flag;
@@ -135,6 +140,8 @@ struct pcat_pm_data {
 	int battery_voltage_now;
 	int charger_voltage_now;
 	int battery_current_now;
+	int battery_energy_now;
+	int battery_energy_full;
 	int battery_soc;
 	bool on_battery;
 	bool on_charger;
@@ -149,6 +156,8 @@ struct pcat_pm_data {
 	u8 rtc_status;
 	
 	unsigned long fan_speed;
+	u64 movement_timestamp;
+	bool movement_activated;
 };
 
 typedef void (*pcat_pm_cmd_exec_func)(struct pcat_pm_data *pm_data,
@@ -295,7 +304,9 @@ static int pcat_pm_battery_get_prop(struct power_supply *ps,
 		val->intval = pm_data->battery_design_min_uv;
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_FULL:
-		val->intval = pm_data->battery_design_uwh;
+		mutex_lock(&pm_data->mutex);
+		val->intval = pm_data->battery_energy_full;
+		mutex_unlock(&pm_data->mutex);
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN:
 		val->intval = pm_data->battery_design_uwh;
@@ -305,6 +316,11 @@ static int pcat_pm_battery_get_prop(struct power_supply *ps,
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_EMPTY_DESIGN:
 		val->intval = 0;
+		break;
+	case POWER_SUPPLY_PROP_ENERGY_NOW:
+		mutex_lock(&pm_data->mutex);
+		val->intval = pm_data->battery_energy_now;
+		mutex_unlock(&pm_data->mutex);
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
 		mutex_lock(&pm_data->mutex);
@@ -439,17 +455,15 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	s16 battery_current;
 	bool on_battery;
 	int soc;
+	u32 energy_now = 0, energy_full = 0;
 
 	if (data_len < 16)
 		return;
 		
 	battery_voltage = data[0] | ((u16)data[1] << 8);
-	charger_voltage = data[2] + ((u16)data[3] << 8);
-	gpio_input = data[4] + ((u16)data[5] << 8);
-	gpio_output = data[6] + ((u16)data[7] << 8);
-
-	soc = power_supply_batinfo_ocv2cap(
-		pm_data->battery_info, (int)battery_voltage * 1000, 20);
+	charger_voltage = data[2] | ((u16)data[3] << 8);
+	gpio_input = data[4] | ((u16)data[5] << 8);
+	gpio_output = data[6] | ((u16)data[7] << 8);
 
 	if (data_len >= 20) {
 		temp = (int)data[17] - 100;
@@ -461,11 +475,25 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 		on_battery = (charger_voltage < 4200);
 	}
 	
+	if (data_len >= 35) {
+		energy_now = data[23] | ((u32)data[24] << 8) |
+			((u32)data[25] << 16) | ((u32)data[26] << 24);
+		energy_full = data[27] | ((u32)data[28] << 8) |
+			((u32)data[29] << 16) | ((u32)data[30] << 24);
+
+		soc = data[22];
+	} else {
+		soc = power_supply_batinfo_ocv2cap(
+			pm_data->battery_info, (int)battery_voltage * 1000, 20);
+	}
+	
 	mutex_lock(&pm_data->mutex);
 	pm_data->battery_voltage_now = battery_voltage * 1000;
 	pm_data->charger_voltage_now = charger_voltage * 1000;
 	pm_data->battery_current_now = -battery_current * 1000;
 	pm_data->battery_soc = soc;
+	pm_data->battery_energy_now = energy_now * 1000;
+	pm_data->battery_energy_full = energy_full * 1000;
 	pm_data->on_battery = on_battery;
 	pm_data->on_charger = (charger_voltage >= 4200);
 	pm_data->rtc_year = data[8] + ((u16)data[9] << 8);
@@ -501,6 +529,9 @@ static void pcat_pm_uart_cmd_exec(struct pcat_pm_data *pm_data,
 		if (extra_data_len > 0 && extra_data[0])
 			dev_err(&pm_data->serdev->dev, "Failed to sync date: %d\n",
 				extra_data[0]);
+		break;
+	case PCAT_PM_COMMAND_DEVICE_MOVEMENT:
+		pm_data->movement_timestamp = ktime_get_boottime_ns();
 		break;
 	default:
 		mutex_lock(&pm_data->ctl_mutex);
@@ -556,7 +587,6 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data,
 		
 		p = buffer + i;
 		remaining_size = *buffer_used - i;
-		used_size = i + 1;
 
 		if (remaining_size < 13)
 			break;
@@ -653,12 +683,31 @@ static const struct serdev_device_ops pcat_pm_serdev_ops = {
 static void pcat_pm_check_work(struct kthread_work *work)
 {
         struct pcat_pm_data *pm_data;
+        u64 now;
 
         pm_data = container_of(work, struct pcat_pm_data, check_work);
         
         if (pm_data->work_flag)
 	        pcat_pm_uart_write_data(pm_data, PCAT_PM_COMMAND_HEARTBEAT,
 	        	NULL, 0, false, 0);
+
+	now = ktime_get_boottime_ns();
+	
+	if (now >= pm_data->movement_timestamp &&
+		now < pm_data->movement_timestamp + 5000000000UL) {
+		
+		if (!pm_data->movement_activated) {
+			pm_data->movement_activated = true;
+			
+			
+		}
+	} else {
+		if (pm_data->movement_activated) {
+			pm_data->movement_activated = false;
+			
+			
+		}
+	}
 }
 
 static enum hrtimer_restart pcat_pm_check_timer_expired(struct hrtimer *timer)
@@ -1182,6 +1231,23 @@ static int pcat_pm_fan_probe(struct pcat_pm_data *pm_data)
 	return 0;
 }
 
+static const struct kobj_type pcat_pm_kobj_ktype = {
+	.sysfs_ops = &kobj_sysfs_ops,
+};
+
+static ssize_t movement_trigger_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	struct pcat_pm_data *pm_data;
+	
+	pm_data = container_of(kobj, struct pcat_pm_data, kobject);
+
+	return sprintf(buf, "%u\n", pm_data->movement_activated ? 1 : 0);
+}
+
+static struct kobj_attribute pcat_pm_sysfs_attribute =
+	__ATTR_RO(movement_trigger);
+
 static int pcat_pm_probe(struct serdev_device *serdev)
 {
 	struct pcat_pm_data *pm_data;
@@ -1198,6 +1264,17 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	mutex_init(&pm_data->mutex);
 	mutex_init(&pm_data->ctl_mutex);
 	init_waitqueue_head(&pm_data->ctl_wait);
+	
+	ret = kobject_init_and_add(&pm_data->kobject, &pcat_pm_kobj_ktype,
+		kernel_kobj, "%s", "photonicat-pm");
+	if (!ret) {
+		ret = sysfs_create_file(&pm_data->kobject,
+			&pcat_pm_sysfs_attribute.attr);
+		if (ret)
+			dev_err(dev, "Failed to create sysfs file: %d\n", ret);
+	} else {
+		dev_err(dev, "Failed to initialize kernel object: %d\n", ret);
+	}
 
 	if (device_property_read_u32(dev, "baudrate",
 				    &pm_data->baudrate)) {

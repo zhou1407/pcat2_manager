@@ -685,8 +685,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     battery_percentage = 100.0f;
 
     pmu_data->last_charger_voltage = charger_voltage;
-    pmu_data->board_temp = board_temp;
-    pmu_data->board_temp -= 40;
+    pmu_data->board_temp = board_temp / 1000;
 
     pmu_data->last_battery_percentage = battery_percentage * 100;
 
