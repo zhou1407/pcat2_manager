@@ -87,6 +87,7 @@ static enum power_supply_property pcat_pm_battery_v2_properties[] = {
 	POWER_SUPPLY_PROP_ENERGY_EMPTY,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
 	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_POWER_NOW,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_VOLTAGE_MIN_DESIGN,
 	POWER_SUPPLY_PROP_VOLTAGE_MAX_DESIGN,
@@ -330,6 +331,12 @@ static int pcat_pm_battery_get_prop(struct power_supply *ps,
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		mutex_lock(&pm_data->mutex);
 		val->intval = pm_data->battery_current_now;
+		mutex_unlock(&pm_data->mutex);
+		break;
+	case POWER_SUPPLY_PROP_POWER_NOW:
+		mutex_lock(&pm_data->mutex);
+		val->intval = (pm_data->battery_voltage_now / 1000) *
+			(pm_data->battery_current_now / 1000);
 		mutex_unlock(&pm_data->mutex);
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
