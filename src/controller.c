@@ -84,7 +84,7 @@ static gboolean pcat_controller_unix_socket_output_watch_func(
     PCatControllerData *ctrl_data = &g_pcat_controller_data;
     PCatControllerConnectionData *connection_data =
         (PCatControllerConnectionData *)user_data;
-    gssize wsize;
+    gssize wsize = 0;
     gsize total_write_size = 0, remaining_size;
     GError *error = NULL;
     gboolean ret = FALSE;
