@@ -459,7 +459,7 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	u16 gpio_input, gpio_output;
 	int temp = 0;
 	u16 battery_current_raw = 0;
-	s16 battery_current;
+	s16 battery_current = 0;
 	bool on_battery;
 	int soc;
 	u32 energy_now = 0, energy_full = 0;
@@ -1344,17 +1344,42 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int pcat_pm_pm_suspend(struct device *dev)
+{
+	struct pcat_pm_data *pm_data = dev_get_drvdata(dev);
+
+	pcat_pm_watchdog_timeout_set(pm_data, 0, 0);
+
+	return 0;
+}
+
+static int pcat_pm_pm_resume(struct device *dev)
+{
+	struct pcat_pm_data *pm_data = dev_get_drvdata(dev);
+
+	pcat_pm_watchdog_timeout_set(pm_data, PCAT_PM_WATCHDOG_DEFAULT_INTERVAL, 0);
+
+        return 0;
+}
+#endif
+
 static struct of_device_id pcat_pm_of_match[] = {
 	{ .compatible = "photonicat-pm" },
 	{}
 };
 MODULE_DEVICE_TABLE(of, pcat_pm_of_match);
 
+static const struct dev_pm_ops pcat_pm_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(pcat_pm_pm_suspend, pcat_pm_pm_resume)
+};
+
 static struct serdev_device_driver pcat_pm_driver = {
 	.driver = {
 		.name = "photonicat-pm",
 		.owner = THIS_MODULE,
 	        .of_match_table = of_match_ptr(pcat_pm_of_match),
+	        .pm = &pcat_pm_pm_ops,
 	},
 	.probe = pcat_pm_probe,
 };

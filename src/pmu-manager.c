@@ -84,8 +84,6 @@ typedef struct _PCatPMUManagerData
     guint last_charger_voltage;
     gboolean last_on_battery_state;
     guint last_battery_percentage;
-    guint last_battery_percentage_cap;
-    gint last_battery_voltages[128];
 
     gchar *pmu_fw_version;
     gint64 charger_on_auto_start_last_timestamp;
@@ -628,7 +626,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     if(fp!=NULL)
     {
         fscanf(fp, "%u", &charger_voltage);
-        battery_voltage /= 1000;
+        charger_voltage /= 1000;
         fclose(fp);
     }
 
@@ -655,29 +653,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
 
     on_battery = (charger_voltage < charge_detection_threshold);
 
-    if(!!pmu_data->last_on_battery_state != !!on_battery)
-    {
-        for(i=0;i<128;i++)
-        {
-            pmu_data->last_battery_voltages[i] = -1;
-        }
-    }
     pmu_data->last_on_battery_state = on_battery;
-
-    for(i=0;i<128;i++)
-    {
-        if(pmu_data->last_battery_voltages[i] < 0)
-        {
-            pmu_data->last_battery_voltages[i] = battery_voltage;
-            break;
-        }
-    }
-    if(i>=128)
-    {
-        memmove(pmu_data->last_battery_voltages,
-            pmu_data->last_battery_voltages + 1, 127 * sizeof(gint));
-        pmu_data->last_battery_voltages[127] = battery_voltage;
-    }
 
     pmu_data->last_battery_voltage = battery_voltage;
 
@@ -1223,11 +1199,6 @@ gboolean pcat_pmu_manager_init()
     g_pcat_pmu_manager_data.last_battery_percentage_cap = 10000;
 
     g_mkdir_with_parents(PCAT_PMU_MANAGER_STATEFS_BATTERY_PATH, 0755);
-
-    for(i=0;i<128;i++)
-    {
-        g_pcat_pmu_manager_data.last_battery_voltages[i] = -1;
-    }
 
     g_pcat_pmu_manager_data.dev_read_buffer = g_byte_array_new();
     g_pcat_pmu_manager_data.dev_write_command_queue = g_queue_new();
