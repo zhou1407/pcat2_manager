@@ -587,7 +587,6 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     gboolean on_battery = TRUE;
     guint charger_online;
     gint board_temp = 0;
-    guint i;
     const PCatManagerMainConfigData *config_data;
     guint charge_detection_threshold = 4200;
 
@@ -1196,7 +1195,6 @@ gboolean pcat_pmu_manager_init()
     g_pcat_pmu_manager_data.charger_on_auto_start_last_timestamp =
         g_get_monotonic_time();
     g_pcat_pmu_manager_data.power_on_event = 0;
-    g_pcat_pmu_manager_data.last_battery_percentage_cap = 10000;
 
     g_mkdir_with_parents(PCAT_PMU_MANAGER_STATEFS_BATTERY_PATH, 0755);
 

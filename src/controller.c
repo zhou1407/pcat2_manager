@@ -469,7 +469,7 @@ static void pcat_controller_command_schedule_power_event_set_func(
     PCatManagerPowerScheduleData *sdata;
     PCatManagerUserConfigData *uconfig_data;
     guint count_on = 0, count_off = 0;
-    gboolean action;
+    gboolean action = FALSE;
     gint y, m, d, h, min;
     GDateTime *dt1, *dt2;
 
