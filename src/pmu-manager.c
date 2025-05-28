@@ -609,7 +609,7 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     }
 
     fname = g_build_filename(PCAT_PMU_MANAGER_BATTERY_SYSFS_PATH,
-        "voltage_now", NULL);
+        "capacity", NULL);
     fp = fopen(fname, "r");
     g_free(fname);
     if(fp!=NULL)
@@ -655,9 +655,6 @@ static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
     pmu_data->last_on_battery_state = on_battery;
 
     pmu_data->last_battery_voltage = battery_voltage;
-
-
-    battery_percentage = 100.0f;
 
     pmu_data->last_charger_voltage = charger_voltage;
     pmu_data->board_temp = board_temp / 1000;
