@@ -186,7 +186,7 @@ static gboolean pcat_pmu_pm_dev_write_watch_func(GIOChannel *source,
     GIOCondition condition, gpointer user_data)
 {
     PCatPMUManagerData *pmu_data = (PCatPMUManagerData *)user_data;
-    gssize wsize;
+    gssize wsize = 0;
     guint remaining_size;
     gboolean ret = FALSE;
     gint64 now;
