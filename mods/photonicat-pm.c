@@ -1206,7 +1206,7 @@ static int pcat_pm_fan_set_cur_state(struct thermal_cooling_device *cdev,
 	pm_data->fan_speed = state;
 	
 	if (state > 0) {
-		speed_raw = 8 * (state - 1) + 20;
+		speed_raw = 9 * (state - 1) + 19;
 	} else {
 		speed_raw = 0;
 	}

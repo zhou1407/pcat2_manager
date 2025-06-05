@@ -537,7 +537,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
     struct json_object *root, *child, *protocol, *policies, *rules, *rule;
     struct json_object *interfaces, *interface;
     guint rules_len;
-    const gchar *iface, *upercent;
+    const gchar *iface;
     guint percent;
     gboolean ret;
     PCatMainIfaceType route_iface;
@@ -683,7 +683,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
 
                 if(json_object_object_get_ex(interface, "up", &child))
                 {
-                    if(g_strcmp0(json_object_get_string(child), "true")!=0)
+                    if(!json_object_get_boolean(child))
                     {
                         continue;
                     }
@@ -695,7 +695,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
 
                 if(json_object_object_get_ex(interface, "running", &child))
                 {
-                    if(g_strcmp0(json_object_get_string(child), "true")==0)
+                    if(json_object_get_boolean(child))
                     {
                         mwan3_status_all_not_running = FALSE;
                     }
@@ -755,12 +755,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                         if(json_object_object_get_ex(rule, "percent",
                             &child))
                         {
-                            upercent = json_object_get_string(child);
-
-                            if(upercent!=NULL)
-                            {
-                                sscanf(upercent, "%d", &percent);
-                            }
+                            percent = json_object_get_int(child);
                         }
 
                         route_iface = PCAT_MAIN_IFACE_LAST;
@@ -823,12 +818,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                         if(json_object_object_get_ex(rule, "percent",
                             &child))
                         {
-                            upercent = json_object_get_string(child);
-
-                            if(upercent!=NULL)
-                            {
-                                sscanf(upercent, "%d", &percent);
-                            }
+                            percent = json_object_get_int(child);
                         }
 
                         route_iface = PCAT_MAIN_IFACE_LAST;
