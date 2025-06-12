@@ -1291,7 +1291,7 @@ gboolean pcat_pmu_manager_init()
             {
                 fread(hwmon_name, 63, 1, hwmon_name_fp);
 
-                if(g_str_has_prefix(hwmon_name, "pcat_pm_hwmon"))
+                if(g_str_has_prefix(hwmon_name, "pcat_pm_hwmon_temp_mb"))
                 {
                     g_pcat_pmu_manager_data.board_hwmon_device_path =
                         g_build_filename("/sys/class/hwmon", hwmon_dname,
