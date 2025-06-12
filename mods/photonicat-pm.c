@@ -109,7 +109,8 @@ struct pcat_pm_data {
 	struct hrtimer check_timer;
 	struct power_supply_battery_info *battery_info;
 	struct rtc_device *rtc;
-	struct device *hwmon_dev;
+	struct device *hwmon_temp_mb_dev;
+	struct device *hwmon_speed_fan_dev;
 	struct miscdevice ctl_device;
 	struct mutex ctl_mutex;
 	wait_queue_head_t ctl_wait;
@@ -147,6 +148,11 @@ struct pcat_pm_data {
 	bool on_battery;
 	bool on_charger;
 	int board_temp;
+	int gs_x;
+	int gs_y;
+	int gs_z;
+	bool gs_ready;
+	u32 fan_speed;
 	
 	u16 rtc_year;
 	u8 rtc_month;
@@ -156,7 +162,7 @@ struct pcat_pm_data {
 	u8 rtc_sec;
 	u8 rtc_status;
 	
-	unsigned long fan_speed;
+	unsigned long fan_ctrl_speed;
 	u64 movement_timestamp;
 	bool movement_activated;
 };
@@ -463,6 +469,9 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	bool on_battery;
 	int soc;
 	u32 energy_now = 0, energy_full = 0;
+	int gs_x = 0, gs_y =0, gs_z = 0;
+	bool gs_ready = false;
+	u32 fan_speed = 0;
 
 	if (data_len < 16)
 		return;
@@ -482,7 +491,7 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 		on_battery = (charger_voltage < 4200);
 	}
 	
-	if (data_len >= 35) {
+	if (data_len >= 31) {
 		energy_now = data[23] | ((u32)data[24] << 8) |
 			((u32)data[25] << 16) | ((u32)data[26] << 24);
 		energy_full = data[27] | ((u32)data[28] << 8) |
@@ -492,6 +501,18 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	} else {
 		soc = power_supply_batinfo_ocv2cap(
 			pm_data->battery_info, (int)battery_voltage * 1000, 20);
+	}
+	
+	if (data_len >= 52) {
+		gs_x = data[35] | ((u32)data[36] << 8) |
+			((u32)data[37] << 16) | ((u32)data[38] << 24);
+		gs_y = data[39] | ((u32)data[40] << 8) |
+			((u32)data[41] << 16) | ((u32)data[42] << 24);
+		gs_z = data[43] | ((u32)data[44] << 8) |
+			((u32)data[45] << 16) | ((u32)data[46] << 24);
+		gs_ready = (data[47]!=0);
+		fan_speed = data[48] | ((u32)data[49] << 8) |
+			((u32)data[50] << 16) | ((u32)data[51] << 24);
 	}
 	
 	mutex_lock(&pm_data->mutex);
@@ -511,6 +532,11 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	pm_data->rtc_sec = data[14];
 	pm_data->rtc_status = data[15];
 	pm_data->board_temp = temp;
+	pm_data->gs_x = gs_x;
+	pm_data->gs_y = gs_y;
+	pm_data->gs_z = gs_z;
+	pm_data->gs_ready = gs_ready;
+	pm_data->fan_speed = fan_speed;
 	mutex_unlock(&pm_data->mutex);
 }
 
@@ -933,7 +959,7 @@ static int pcat_pm_rtc_probe(struct pcat_pm_data *pm_data)
 	return 0;
 }
 
-static umode_t pcat_pm_hwmon_is_visible(const void *data,
+static umode_t pcat_pm_hwmon_temp_mb_is_visible(const void *data,
 					enum hwmon_sensor_types type,
 					u32 attr, int channel)
 {
@@ -948,9 +974,24 @@ static umode_t pcat_pm_hwmon_is_visible(const void *data,
 	}
 }
 
-static int pcat_pm_hwmon_read(struct device *dev,
+static umode_t pcat_pm_hwmon_speed_fan_is_visible(const void *data,
+					enum hwmon_sensor_types type,
+					u32 attr, int channel)
+{
+	if (type != hwmon_fan)
+		return 0;
+
+	switch (attr) {
+	case hwmon_fan_input:
+		return 0444;
+	default:
+		return 0;
+	}
+}
+
+static int pcat_pm_hwmon_temp_mb_read(struct device *dev,
 			      enum hwmon_sensor_types type,
-			      u32 attr, int channel, long *temp)
+			      u32 attr, int channel, long *val)
 {
 	struct serdev_device *serdev;
 	struct pcat_pm_data *pm_data;
@@ -963,7 +1004,33 @@ static int pcat_pm_hwmon_read(struct device *dev,
 	switch (attr) {
 	case hwmon_temp_input:
 		mutex_lock(&pm_data->mutex);
-		*temp = pm_data->board_temp * 1000;
+		*val = pm_data->board_temp * 1000;
+		mutex_unlock(&pm_data->mutex);
+		break;
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
+static int pcat_pm_hwmon_speed_fan_read(struct device *dev,
+			      enum hwmon_sensor_types type,
+			      u32 attr, int channel, long *val)
+{
+	struct serdev_device *serdev;
+	struct pcat_pm_data *pm_data;
+	int err = 0;
+	
+	serdev = container_of(dev, struct serdev_device, dev);
+	pm_data = serdev_device_get_drvdata(serdev);
+
+
+	switch (attr) {
+	case hwmon_fan_input:
+		mutex_lock(&pm_data->mutex);
+		*val = pm_data->fan_speed;
 		mutex_unlock(&pm_data->mutex);
 		break;
 	default:
@@ -979,37 +1046,74 @@ static u32 pcat_pm_hwmon_temp_config[] = {
 	0
 };
 
-static const struct hwmon_channel_info pcat_pm_hwmon_temp = {
+static u32 pcat_pm_hwmon_fan_config[] = {
+	HWMON_F_INPUT,
+	0
+};
+
+static const struct hwmon_channel_info pcat_pm_hwmon_temp_mb_cinfo = {
 	.type = hwmon_temp,
 	.config = pcat_pm_hwmon_temp_config,
 };
 
-static const struct hwmon_channel_info *pcat_pm_hwmon_info[] = {
-	&pcat_pm_hwmon_temp,
+static const struct hwmon_channel_info pcat_pm_hwmon_speed_fan_cinfo = {
+	.type = hwmon_fan,
+	.config = pcat_pm_hwmon_fan_config,
+};
+
+static const struct hwmon_channel_info *pcat_pm_hwmon_temp_mb_info[] = {
+	&pcat_pm_hwmon_temp_mb_cinfo,
 	NULL
 };
 
-static const struct hwmon_ops pcat_pm_hwmon_ops = {
-	.is_visible = pcat_pm_hwmon_is_visible,
-	.read = pcat_pm_hwmon_read,
+static const struct hwmon_channel_info *pcat_pm_hwmon_speed_fan_info[] = {
+	&pcat_pm_hwmon_speed_fan_cinfo,
+	NULL
 };
 
-static const struct hwmon_chip_info pcat_pm_hwmon_chip_info = {
-	.ops = &pcat_pm_hwmon_ops,
-	.info = pcat_pm_hwmon_info,
+static const struct hwmon_ops pcat_pm_hwmon_temp_mb_ops = {
+	.is_visible = pcat_pm_hwmon_temp_mb_is_visible,
+	.read = pcat_pm_hwmon_temp_mb_read,
+};
+
+static const struct hwmon_ops pcat_pm_hwmon_speed_fan_ops = {
+	.is_visible = pcat_pm_hwmon_speed_fan_is_visible,
+	.read = pcat_pm_hwmon_speed_fan_read,
+};
+
+static const struct hwmon_chip_info pcat_pm_hwmon_temp_mb_chip_info = {
+	.ops = &pcat_pm_hwmon_temp_mb_ops,
+	.info = pcat_pm_hwmon_temp_mb_info,
+};
+
+static const struct hwmon_chip_info pcat_pm_hwmon_speed_fan_chip_info = {
+	.ops = &pcat_pm_hwmon_speed_fan_ops,
+	.info = pcat_pm_hwmon_speed_fan_info,
 };
 
 static int pcat_pm_hwmon_probe(struct pcat_pm_data *pm_data)
 {
-	int ret = 0;
+	int ret = 0, err;
 
-	pm_data->hwmon_dev = devm_hwmon_device_register_with_info(
-		&pm_data->serdev->dev, "pcat_pm_hwmon", pm_data,
-		&pcat_pm_hwmon_chip_info, NULL);
-		
-	if (IS_ERR(pm_data->hwmon_dev)) {
-		ret = PTR_ERR(pm_data->hwmon_dev);
-		dev_err(&pm_data->serdev->dev, "Failed to register hwmon: %d\n", ret);
+	pm_data->hwmon_temp_mb_dev = devm_hwmon_device_register_with_info(
+		&pm_data->serdev->dev, "pcat_pm_hwmon_temp_mb", pm_data,
+		&pcat_pm_hwmon_temp_mb_chip_info, NULL);
+	if (IS_ERR(pm_data->hwmon_temp_mb_dev)) {
+		err = PTR_ERR(pm_data->hwmon_temp_mb_dev);
+		dev_err(&pm_data->serdev->dev,
+			"Failed to register hwmon for MB temperature: %d\n", err);
+		ret = err;
+	}
+	
+	pm_data->hwmon_speed_fan_dev = devm_hwmon_device_register_with_info(
+		&pm_data->serdev->dev, "pcat_pm_hwmon_speed_fan", pm_data,
+		&pcat_pm_hwmon_speed_fan_chip_info, NULL);
+	if (IS_ERR(pm_data->hwmon_speed_fan_dev)) {
+		err = PTR_ERR(pm_data->hwmon_speed_fan_dev);
+		dev_err(&pm_data->serdev->dev,
+			"Failed to register hwmon for fan speed: %d\n", err);
+		if (!ret)
+			ret = err;
 	}
 		
 	return ret;
@@ -1189,7 +1293,7 @@ static int pcat_pm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 {
 	struct pcat_pm_data *pm_data = cdev->devdata;
 
-	*state = pm_data->fan_speed;
+	*state = pm_data->fan_ctrl_speed;
 
 	return 0;
 }
@@ -1203,10 +1307,10 @@ static int pcat_pm_fan_set_cur_state(struct thermal_cooling_device *cdev,
 	if (state > 9)
 		return -EINVAL;
 
-	pm_data->fan_speed = state;
+	pm_data->fan_ctrl_speed = state;
 	
 	if (state > 0) {
-		speed_raw = 9 * (state - 1) + 19;
+		speed_raw = 10 * (state - 1) + 20;
 	} else {
 		speed_raw = 0;
 	}
@@ -1225,10 +1329,19 @@ static const struct thermal_cooling_device_ops pcat_pm_fan_cooling_ops = {
 
 static int pcat_pm_fan_probe(struct pcat_pm_data *pm_data)
 {
+	struct serdev_device *serdev = pm_data->serdev;
+	struct device *dev = &serdev->dev;
 	struct thermal_cooling_device *cdev;
+	struct device_node *fan_node;
 	
-	cdev = thermal_cooling_device_register("pcat-pm-fan", pm_data,
-		&pcat_pm_fan_cooling_ops);
+	fan_node = of_get_child_by_name(dev->of_node, "fan");
+	if (!fan_node) {
+		dev_err(dev, "Missing fan node!\n");
+		return -ENODEV;
+	}
+
+	cdev = devm_thermal_of_cooling_device_register(dev, fan_node,
+		"pcat-pm-fan", pm_data, &pcat_pm_fan_cooling_ops);
 
 	if (IS_ERR(cdev))
 		return -ENODEV;
