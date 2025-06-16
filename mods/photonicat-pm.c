@@ -135,6 +135,8 @@ struct pcat_pm_data {
 	size_t ctl_read_buffer_used;
 	
 	struct mutex mutex;
+	u64 status_report_timestamp;
+	u64 status_report_timeout_warn_timestamp;
 	unsigned int battery_technology;
 	int battery_design_uwh;
 	int battery_design_min_uv;
@@ -515,6 +517,8 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 			((u32)data[50] << 16) | ((u32)data[51] << 24);
 	}
 	
+	pm_data->status_report_timestamp = ktime_get_boottime_ns();
+	
 	mutex_lock(&pm_data->mutex);
 	pm_data->battery_voltage_now = battery_voltage * 1000;
 	pm_data->charger_voltage_now = charger_voltage * 1000;
@@ -569,8 +573,10 @@ static void pcat_pm_uart_cmd_exec(struct pcat_pm_data *pm_data,
 	default:
 		mutex_lock(&pm_data->ctl_mutex);
 		if (pm_data->ctl_write_buffer_used + rawdata_len > PCAT_PM_BUFFER_SIZE) {
-			overflow_size = pm_data->ctl_write_buffer_used + rawdata_len - PCAT_PM_BUFFER_SIZE;
-			memmove(pm_data->ctl_write_buffer, pm_data->ctl_write_buffer + overflow_size,
+			overflow_size = pm_data->ctl_write_buffer_used +
+				rawdata_len - PCAT_PM_BUFFER_SIZE;
+			memmove(pm_data->ctl_write_buffer,
+				pm_data->ctl_write_buffer + overflow_size,
 				PCAT_PM_BUFFER_SIZE - overflow_size);
 			memcpy(pm_data->ctl_write_buffer + PCAT_PM_BUFFER_SIZE - rawdata_len,
 				rawdata, rawdata_len);
@@ -628,15 +634,20 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data,
 		if (expect_len < 3 || expect_len > 515) {
 			used_size = i + 1;
 			i++;
+			dev_err(&pm_data->serdev->dev,
+				"Invalid command data length!");
 			continue;
 		}
 
-		if (expect_len + 10 > remaining_size)
+		if (expect_len + 10 > remaining_size) {
 			break;
+		}
 
 		if (p[9 + expect_len]!=0x5A) {
 			used_size = i + 1;
 			i++;
+			dev_err(&pm_data->serdev->dev,
+				"Serial port data missing valid tail!");
 			continue;
 		}
 		
@@ -645,8 +656,8 @@ static size_t pcat_pm_uart_receive_parse(struct pcat_pm_data *pm_data,
 		
 		if (checksum!=rchecksum) {
 			dev_err(&pm_data->serdev->dev,
-				"Serial port got incorrect checksum %X, "
-				"should be %X!", checksum ,rchecksum);
+				"Serial port got incorrect checksum %04X, "
+				"should be %04X!", checksum, rchecksum);
 			i += 10 + expect_len;
 			used_size = i;
 			continue;
@@ -726,6 +737,12 @@ static void pcat_pm_check_work(struct kthread_work *work)
 
 	now = ktime_get_boottime_ns();
 	
+	if (now >= pm_data->status_report_timestamp + 15000000000UL &&
+		now >= pm_data->status_report_timeout_warn_timestamp + 15000000000UL) {
+		dev_warn(&pm_data->serdev->dev, "Status report timeout!");
+		pm_data->status_report_timeout_warn_timestamp = now;
+	}
+	
 	if (now >= pm_data->movement_timestamp &&
 		now < pm_data->movement_timestamp + 5000000000UL) {
 		
@@ -737,8 +754,6 @@ static void pcat_pm_check_work(struct kthread_work *work)
 	} else {
 		if (pm_data->movement_activated) {
 			pm_data->movement_activated = false;
-			
-			
 		}
 	}
 }
@@ -1384,6 +1399,9 @@ static int pcat_pm_probe(struct serdev_device *serdev)
 	mutex_init(&pm_data->mutex);
 	mutex_init(&pm_data->ctl_mutex);
 	init_waitqueue_head(&pm_data->ctl_wait);
+	
+	pm_data->status_report_timestamp = ktime_get_boottime_ns();
+	pm_data->status_report_timeout_warn_timestamp = pm_data->status_report_timestamp;
 	
 	ret = kobject_init_and_add(&pm_data->kobject, &pcat_pm_kobj_ktype,
 		kernel_kobj, "%s", "photonicat-pm");
