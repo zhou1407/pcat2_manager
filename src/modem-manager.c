@@ -106,7 +106,7 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
     gsize i, j;
     GString *str = mm_data->external_control_exec_stdout_buffer;
     gsize used_size = 0;
-    const gchar *start = str->str;
+    const gchar *start;
     gchar **fields, **values;
     GHashTable *table;
     const gchar *cmd, *smode, *value_raw_str;
@@ -131,6 +131,7 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
         str->len = 0;
     }
 
+    start = str->str;
     for(i=0;i<str->len;i++)
     {
         if(str->str[i]=='\n')
