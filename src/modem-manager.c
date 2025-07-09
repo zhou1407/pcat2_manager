@@ -646,7 +646,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
     gpointer user_data)
 {
     PCatModemManagerData *mm_data = (PCatModemManagerData *)user_data;
-    gboolean modem_exist = FALSE;
     guint i;
 
     while(mm_data->work_flag)
@@ -711,25 +710,6 @@ static gpointer pcat_modem_manager_modem_work_thread_func(
                     break;
                 }
 
-                if(modem_exist && !mm_data->modem_exist)
-                {
-                    pcat_modem_manager_device_rfkill_mode_set(TRUE);
-
-                    for(i=0;i<30 && mm_data->work_flag;i++)
-                    {
-                        g_usleep(100000);
-                    }
-
-                    if(!mm_data->work_flag)
-                    {
-                        break;
-                    }
-
-                    pcat_modem_manager_device_rfkill_mode_set(FALSE);
-                }
-
-                modem_exist = mm_data->modem_exist;
-
                 if(!mm_data->work_flag)
                 {
                     break;
@@ -790,12 +770,12 @@ static gboolean pcat_modem_scan_timeout_func(gpointer user_data)
             if(now > mm_data->modem_5g_connection_timestamp +
                 modem_5g_fail_timeout)
             {
-                pcat_modem_manager_device_rfkill_mode_set(TRUE);
-                pcat_modem_manager_device_rfkill_mode_set(FALSE);
-
+                mm_data->modem_5g_connection_timestamp = now;
                 mm_data->modem_have_5g_connected = FALSE;
 
-                mm_data->modem_5g_connection_timestamp = now;
+                pcat_modem_manager_device_rfkill_mode_set(TRUE);
+                g_usleep(500000);
+                pcat_modem_manager_device_rfkill_mode_set(FALSE);
             }
         }
     }
