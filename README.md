@@ -1,0 +1,85 @@
+# PCat Manager
+
+PCat Manager is a power management and device control system for Photonicat 1/2 devices.
+
+## Building Dependencies
+
+libglib2.0-dev libusb-1.0-0-dev libjson-c-dev libgpiod-dev
+
+## Interfaces
+
+### Socket API Documentation
+
+**Socket Type:** Unix Domain Socket  
+**Socket Path:** `/tmp/pcat-manager.sock`  
+**Protocol:** JSON over stream socket  
+**Message Format:** JSON string terminated with null byte (`\0`)
+
+#### Connection Example:
+```python
+import socket
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect('/tmp/pcat-manager.sock')
+s.send(b"{'command':'pmu-status'}\0")
+response = s.recv(1024)
+```
+
+#### Available Commands:
+
+**Power Management Commands:**
+- `pmu-status` - Get PMU status (battery voltage, charger voltage, battery percentage, board temperature)
+- `pmu-fw-version-get` - Get PMU firmware version
+- `pmu-io-get` - Get PMU I/O states (LED, beeper)
+- `pmu-io-set` - Set PMU I/O states
+
+**Power Scheduling Commands:**
+- `schedule-power-event-set` - Set power schedule events
+- `schedule-power-event-get` - Get power schedule events
+
+**Charger Commands:**
+- `charger-on-auto-start-set` - Configure charger auto-start
+- `charger-on-auto-start-get` - Get charger auto-start configuration
+
+**Modem Commands:**
+- `modem-status-get` - Get modem status (mode, SIM state, signal strength, ISP info)
+- `modem-rfkill-mode-set` - Set RF kill mode
+- `modem-network-setup` - Configure modem network settings
+- `modem-network-get` - Get modem network configuration
+
+**System Commands:**
+- `network-route-mode-get` - Get current network routing mode
+
+#### Response Format:
+All responses are JSON objects containing:
+- `command` - Echo of the command sent
+- `code` - Response code (0 = success)
+- Additional fields specific to each command
+
+#### Example Responses:
+
+**pmu-status response:**
+```json
+{
+  "command": "pmu-status",
+  "code": 0,
+  "battery-voltage": 4200,
+  "charger-voltage": 5000,
+  "on-battery": 0,
+  "charge-percentage": 85,
+  "board-temperature": 35
+}
+```
+
+**modem-status-get response:**
+```json
+{
+  "command": "modem-status-get", 
+  "code": 0,
+  "mode": "LTE",
+  "sim-state": 2,
+  "rfkill-state": 0,
+  "signal-strength": -75,
+  "isp-name": "Carrier",
+  "isp-plmn": "12345"
+}
+```
