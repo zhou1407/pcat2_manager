@@ -1,6 +1,6 @@
 # PCat Manager
 
-PCat Manager is a power management and device control system for Photonicat 1/2 devices.
+PCat Manager is a power management and device control system for photonicat 1/2 devices.
 
 ## Building Dependencies
 
@@ -55,9 +55,17 @@ All responses are JSON objects containing:
 - `code` - Response code (0 = success)
 - Additional fields specific to each command
 
-#### Example Responses:
+#### Example:
 
-**pmu-status response:**
+**pmu-status**
+Request:
+```json
+{
+  "command": "pmu-status"
+}
+```
+
+Response:
 ```json
 {
   "command": "pmu-status",
@@ -70,7 +78,15 @@ All responses are JSON objects containing:
 }
 ```
 
-**modem-status-get response:**
+**modem-status-get**
+Request:
+```json
+{
+  "command": "modem-status-get"
+}
+```
+
+Response:
 ```json
 {
   "command": "modem-status-get", 
@@ -83,3 +99,40 @@ All responses are JSON objects containing:
   "isp-plmn": "12345"
 }
 ```
+
+**pmu-io-set**
+Request:
+```json
+{
+  "command": "pmu-io-set",
+  "status-led-v2-enabled": 1,
+  "beeper-enabled": 1
+}
+```
+
+Response:
+```json
+{
+  "command": "pmu-io-set", 
+  "code": 0
+}
+```
+
+**pmu-io-get**
+Request:
+```json
+{
+  "command": "pmu-io-get"
+}
+```
+
+Response:
+```json
+{
+  "command": "pmu-io-set", 
+  "code": 0,
+  "status-led-v2-enabled": 1,
+  "beeper-enabled": 1
+}
+```
+
