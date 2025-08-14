@@ -96,6 +96,9 @@ typedef struct _PCatPMUManagerData
     guint battery_discharge_table_normal[11];
     guint battery_discharge_table_5g[11];
     guint battery_charge_table[11];
+
+    gboolean status_led_v2_state;
+    gboolean beeper_state;
 }PCatPMUManagerData;
 
 static PCatPMUManagerData g_pcat_pmu_manager_data = {0};
@@ -316,6 +319,7 @@ static void pcat_pmu_pm_dev_write_data_request(
     ba = g_byte_array_new();
 
     g_byte_array_append(ba, (const guint8 *)"\xA5\x01\x81", 3);
+    sv = GUINT16_TO_LE(0);
     g_byte_array_append(ba, (const guint8 *)&sv, 2);
 
     if(extra_data!=NULL && extra_data_len > 0 && extra_data_len <= 65532)
@@ -1198,6 +1202,8 @@ gboolean pcat_pmu_manager_init()
     g_pcat_pmu_manager_data.dev_read_buffer = g_byte_array_new();
     g_pcat_pmu_manager_data.dev_write_command_queue = g_queue_new();
     g_pcat_pmu_manager_data.dev_write_current_command_data = NULL;
+    g_pcat_pmu_manager_data.status_led_v2_state = TRUE;
+    g_pcat_pmu_manager_data.beeper_state = TRUE;
 
 
     if(!pcat_pmu_pm_dev_open(&g_pcat_pmu_manager_data))
@@ -1430,7 +1436,7 @@ void pcat_pmu_manager_charger_on_auto_start(gboolean state)
         state);
 }
 
-void pcat_pmu_manager_net_status_led_setup(guint on_time, guint down_time,
+void pcat_pmu_manager_net_status_led_setup(guint on_time, guint off_time,
     guint repeat)
 {
     if(!g_pcat_pmu_manager_data.initialized)
@@ -1439,7 +1445,7 @@ void pcat_pmu_manager_net_status_led_setup(guint on_time, guint down_time,
     }
 
     pcat_pmu_manager_net_status_led_setup_internal(&g_pcat_pmu_manager_data,
-        on_time, down_time, repeat);
+        on_time, off_time, repeat);
 }
 
 const gchar *pcat_pmu_manager_pmu_fw_version_get()
@@ -1469,4 +1475,24 @@ void pcat_pmu_manager_voltage_threshold_set(guint led_vh, guint led_vm,
 gint pcat_pmu_manager_board_temp_get()
 {
     return g_pcat_pmu_manager_data.board_temp;
+}
+
+void pcat_pmu_manager_status_led_v2_state_set(gboolean state)
+{
+
+}
+
+gboolean pcat_pmu_manager_status_led_v2_state_get()
+{
+    return g_pcat_pmu_manager_data.status_led_v2_state;
+}
+
+void pcat_pmu_manager_beeper_state_set(gboolean state)
+{
+
+}
+
+gboolean pcat_pmu_manager_beeper_state_get()
+{
+    return g_pcat_pmu_manager_data.beeper_state;
 }

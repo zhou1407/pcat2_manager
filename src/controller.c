@@ -1169,6 +1169,68 @@ static void pcat_controller_command_modem_network_get_func(
     json_object_put(rroot);
 }
 
+static void pcat_controller_command_pmu_io_set_func(
+    PCatControllerData *ctrl_data,
+    PCatControllerConnectionData *connection_data,
+    const gchar *command, struct json_object *root)
+{
+    struct json_object *rroot, *child;
+    gint state;
+
+    rroot = json_object_new_object();
+
+    child = json_object_new_string(command);
+    json_object_object_add(rroot, "command", child);
+
+    child = json_object_new_int(0);
+    json_object_object_add(rroot, "code", child);
+
+    if(json_object_object_get_ex(root, "status-led-v2-enabled", &child))
+    {
+        state = json_object_get_int(child);
+        pcat_pmu_manager_status_led_v2_state_set(state!=0);
+    }
+
+    if(json_object_object_get_ex(root, "beeper-enabled", &child))
+    {
+        state = json_object_get_int(child);
+        pcat_pmu_manager_beeper_state_set(state!=0);
+    }
+
+    pcat_controller_unix_socket_output_json_push(ctrl_data, connection_data,
+        rroot);
+    json_object_put(rroot);
+}
+
+static void pcat_controller_command_pmu_io_get_func(
+    PCatControllerData *ctrl_data,
+    PCatControllerConnectionData *connection_data,
+    const gchar *command, struct json_object *root)
+{
+    struct json_object *rroot, *child;
+    gboolean state;
+
+    rroot = json_object_new_object();
+
+    child = json_object_new_string(command);
+    json_object_object_add(rroot, "command", child);
+
+    child = json_object_new_int(0);
+    json_object_object_add(rroot, "code", child);
+
+    state = pcat_pmu_manager_status_led_v2_state_get();
+    child = json_object_new_int(state ? 1 : 0);
+    json_object_object_add(rroot, "status-led-v2-enabled", child);
+
+    state = pcat_pmu_manager_beeper_state_get();
+    child = json_object_new_int(state ? 1 : 0);
+    json_object_object_add(rroot, "beeper-enabled", child);
+
+    pcat_controller_unix_socket_output_json_push(ctrl_data, connection_data,
+        rroot);
+    json_object_put(rroot);
+}
+
 static PCatControllerCommandData g_pcat_controller_command_list[] =
 {
     {
@@ -1214,6 +1276,14 @@ static PCatControllerCommandData g_pcat_controller_command_list[] =
     {
         .command = "modem-network-get",
         .callback = pcat_controller_command_modem_network_get_func,
+    },
+    {
+        .command = "pmu-io-set",
+        .callback = pcat_controller_command_pmu_io_set_func,
+    },
+    {
+        .command = "pmu-io-get",
+        .callback = pcat_controller_command_pmu_io_get_func,
     },
     { NULL, NULL }
 };

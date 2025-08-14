@@ -529,7 +529,7 @@ static void pcat_pm_status_report_parse(struct pcat_pm_data *pm_data,
 	pm_data->on_battery = on_battery;
 	pm_data->on_charger = (charger_voltage >= 4200);
 	pm_data->rtc_year = data[8] + ((u16)data[9] << 8);
-	pm_data->rtc_month = data[10];
+	pm_data->rtc_month = data[10] - 1;
 	pm_data->rtc_day = data[11];
 	pm_data->rtc_hour = data[12];
 	pm_data->rtc_min = data[13];
@@ -907,7 +907,7 @@ static int pcat_pm_rtc_set_time(struct device *dev, struct rtc_time *t)
 	y = t->tm_year + 1900;
 	date_data[0] = y & 0xFF;
 	date_data[1] = (y >> 8) & 0xFF;
-	date_data[2] = t->tm_mon;
+	date_data[2] = t->tm_mon + 1;
 	date_data[3] = t->tm_mday;
 	date_data[4] = t->tm_hour;
 	date_data[5] = t->tm_min;
@@ -1169,6 +1169,9 @@ static ssize_t pcat_pm_ctl_dev_read(struct file *file, char *buffer,
 			} else {
 				pm_data->ctl_write_buffer_used = 0;
 			}
+
+			if(pm_data->ctl_write_buffer_used==0)
+				pm_data->ctl_write_buffer_ready = false;
 		}
 		mutex_unlock(&pm_data->ctl_mutex);
 
