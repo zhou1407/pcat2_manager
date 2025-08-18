@@ -26,3 +26,21 @@ executable('pcat-manager',
         thread_deps
     ]
 )
+
+pcat_pmu_updater_sources = [
+    'pcat-pmu-updater.c'
+]
+
+pcat_pmu_updater_headers = [
+
+]
+
+executable('pcat-pmu-updater',
+    pcat_pmu_updater_sources,
+    pcat_pmu_updater_headers,
+    install: true,
+    dependencies : [
+        glib2_deps,
+        zlib_deps
+    ]
+)

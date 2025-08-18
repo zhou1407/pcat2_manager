@@ -7,5 +7,6 @@ gthread2_deps = dependency('gthread-2.0')
 libusb1_deps = dependency('libusb-1.0')
 jsonc_deps = dependency('json-c')
 thread_deps = dependency('threads')
+zlib_deps = dependency('zlib')
 
 subdir('src')

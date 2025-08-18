@@ -1,6 +1,7 @@
 # PCat Manager
 
-PCat Manager is a power management and device control system for photonicat 1/2 devices.
+PCat Manager is a power management and device control system for photonicat2 devices.
+For photonicat (v1) device, use v1 branch.
 
 ## Building Dependencies
 

@@ -103,9 +103,17 @@ typedef struct _PCatPMUUpdaterData
     GByteArray *fw_data;
     gsize fw_data_sent;
     gint fw_update_flag;
+
+    gchar *dtb_compatible;
+    gsize dtb_compatible_len;
 }PCatPMUUpdaterData;
 
 static PCatPMUUpdaterData g_pcat_pmu_updater_data = {0};
+
+static const gchar *g_pcat_pmu_dtb_compatible_name[] = {
+    "ariaboard,photonicat2",
+    NULL
+};
 
 static gboolean pcat_pmu_pm_dev_open(PCatPMUUpdaterData *pmu_data);
 static void pcat_pmu_pm_dev_close(PCatPMUUpdaterData *pmu_data);
@@ -113,11 +121,15 @@ static void pcat_pmu_updater_pmu_fw_data_send_internal(
     PCatPMUUpdaterData *pu_data);
 
 static gboolean g_pcat_pmu_updater_cmd_force = FALSE;
+static gboolean g_pcat_pmu_updater_cmd_get_pwu_fw_version = FALSE;
 
 static GOptionEntry g_pcat_pmu_updater_cmd_entries[] =
 {
     { "force", 'F', 0, G_OPTION_ARG_NONE, &g_pcat_pmu_updater_cmd_force,
         "Force update PMU firmware (ignore version checking).", NULL },
+    { "pmu-fw-version-get", 'P', 0, G_OPTION_ARG_NONE,
+        &g_pcat_pmu_updater_cmd_get_pwu_fw_version,
+        "Get current PMU firmware version", NULL },
     { NULL, 0, 0, G_OPTION_ARG_NONE, NULL, NULL, NULL }
 };
 
@@ -735,7 +747,7 @@ static void pcat_pmu_manager_pmu_fw_update_fw_info_send_internal(
     guint8 payload[32] = {0};
 
     memcpy(payload, "2025010100cat", 13);
-    snprintf(payload + 13, 13, "%012u", fw_raw_size);
+    snprintf((gchar *)payload + 13, 13, "%012u", fw_raw_size);
     memcpy(payload + 25, "00000", 5);
 
     pcat_pmu_pm_dev_write_data_request(pu_data,
@@ -831,6 +843,12 @@ static gboolean pcat_pmu_manager_check_timeout_func(gpointer user_data)
             }
 
             printf("Firmware version on PMU: %s\n", pu_data->pmu_fw_version);
+
+            if(g_pcat_pmu_updater_cmd_get_pwu_fw_version)
+            {
+                g_main_loop_quit(pu_data->main_loop);
+                break;
+            }
 
             if(!g_pcat_pmu_updater_cmd_force)
             {
@@ -967,7 +985,7 @@ static gboolean pcat_pmu_updater_fw_load(PCatPMUUpdaterData *pu_data,
     g_free(fw_data);
 
     printf("Loaded firmware file %s, version %s, size %lu bytes.\n", path,
-        pu_data->fw_version, fw_raw_size);
+        pu_data->fw_version, (gulong)fw_raw_size);
 
     return TRUE;
 }
@@ -976,6 +994,9 @@ int main(int argc, char *argv[])
 {
     GError *error = NULL;
     GOptionContext *context;
+    guint i;
+    gboolean device_matched = FALSE;
+    gint ret;
 
     context = g_option_context_new("- PCat PMU Updater");
     g_option_context_set_ignore_unknown_options(context, TRUE);
@@ -983,42 +1004,78 @@ int main(int argc, char *argv[])
         "PCPU");
     if(!g_option_context_parse(context, &argc, &argv, &error))
     {
-        g_warning("Option parsing failed: %s", error->message);
+        fprintf(stderr, "Option parsing failed: %s\n", error->message);
         g_clear_error(&error);
     }
 
-    g_pcat_pmu_updater_data.main_loop = g_main_loop_new(NULL, FALSE);
-
-    g_pcat_pmu_updater_data.dev_read_buffer = g_byte_array_new();
-    g_pcat_pmu_updater_data.dev_write_command_queue = g_queue_new();
-    g_pcat_pmu_updater_data.dev_write_current_command_data = NULL;
-
-    if(argc < 2)
+    G_STMT_START
     {
-        fprintf(stderr, "Please specify firmware file to update.\n");
-        return 1;
+        if(!g_file_get_contents("/proc/device-tree/compatible",
+            &g_pcat_pmu_updater_data.dtb_compatible,
+            &g_pcat_pmu_updater_data.dtb_compatible_len, &error))
+        {
+            fprintf(stderr, "Failed to get device compatible information: %s\n",
+                error!=NULL ? error->message : "Unknown");
+            ret = 1;
+            break;
+        }
+
+        for(i=0;g_pcat_pmu_dtb_compatible_name[i]!=NULL;i++)
+        {
+            if(g_strstr_len(g_pcat_pmu_updater_data.dtb_compatible, -1,
+                g_pcat_pmu_dtb_compatible_name[i])!=NULL)
+            {
+                device_matched = TRUE;
+            }
+        }
+
+        if(!device_matched)
+        {
+            fprintf(stderr, "This device is not compatible for "
+                "PMU firmware update!\n");
+            ret = 1;
+            break;
+        }
+
+        g_pcat_pmu_updater_data.main_loop = g_main_loop_new(NULL, FALSE);
+
+        g_pcat_pmu_updater_data.dev_read_buffer = g_byte_array_new();
+        g_pcat_pmu_updater_data.dev_write_command_queue = g_queue_new();
+        g_pcat_pmu_updater_data.dev_write_current_command_data = NULL;
+
+        if(!g_pcat_pmu_updater_cmd_get_pwu_fw_version)
+        {
+            if(argc < 2)
+            {
+                fprintf(stderr, "Please specify firmware file to update.\n");
+                return 2;
+            }
+
+            if(!pcat_pmu_updater_fw_load(&g_pcat_pmu_updater_data, argv[1]))
+            {
+                return 3;
+            }
+        }
+
+        if(!pcat_pmu_pm_dev_open(&g_pcat_pmu_updater_data))
+        {
+            return 4;
+        }
+
+        g_pcat_pmu_updater_data.check_timeout_id = g_timeout_add(100,
+            pcat_pmu_manager_check_timeout_func, &g_pcat_pmu_updater_data);
+
+        g_main_loop_run(g_pcat_pmu_updater_data.main_loop);
+
+        if(g_pcat_pmu_updater_data.check_timeout_id > 0)
+        {
+            g_source_remove(g_pcat_pmu_updater_data.check_timeout_id);
+            g_pcat_pmu_updater_data.check_timeout_id = 0;
+        }
+
+        ret = g_pcat_pmu_updater_data.fw_update_flag;
     }
-
-    if(!pcat_pmu_updater_fw_load(&g_pcat_pmu_updater_data, argv[1]))
-    {
-        return 2;
-    }
-
-    if(!pcat_pmu_pm_dev_open(&g_pcat_pmu_updater_data))
-    {
-        return 3;
-    }
-
-    g_pcat_pmu_updater_data.check_timeout_id = g_timeout_add(100,
-        pcat_pmu_manager_check_timeout_func, &g_pcat_pmu_updater_data);
-
-    g_main_loop_run(g_pcat_pmu_updater_data.main_loop);
-
-    if(g_pcat_pmu_updater_data.check_timeout_id > 0)
-    {
-        g_source_remove(g_pcat_pmu_updater_data.check_timeout_id);
-        g_pcat_pmu_updater_data.check_timeout_id = 0;
-    }
+    G_STMT_END;
 
     pcat_pmu_pm_dev_close(&g_pcat_pmu_updater_data);
 
@@ -1047,8 +1104,11 @@ int main(int argc, char *argv[])
         g_pcat_pmu_updater_data.pmu_fw_version = NULL;
     }
 
-    g_main_loop_unref(g_pcat_pmu_updater_data.main_loop);
-    g_pcat_pmu_updater_data.main_loop = NULL;
+    if(g_pcat_pmu_updater_data.main_loop!=NULL)
+    {
+        g_main_loop_unref(g_pcat_pmu_updater_data.main_loop);
+        g_pcat_pmu_updater_data.main_loop = NULL;
+    }
 
     if(g_pcat_pmu_updater_data.fw_data!=NULL)
     {
@@ -1056,7 +1116,13 @@ int main(int argc, char *argv[])
         g_pcat_pmu_updater_data.fw_data = NULL;
     }
 
-    return g_pcat_pmu_updater_data.fw_update_flag;
+    if(g_pcat_pmu_updater_data.dtb_compatible!=NULL)
+    {
+        g_free(g_pcat_pmu_updater_data.dtb_compatible);
+        g_pcat_pmu_updater_data.dtb_compatible = NULL;
+    }
+
+    return ret;
 }
 
 
