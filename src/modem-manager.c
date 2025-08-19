@@ -765,17 +765,25 @@ static gboolean pcat_modem_scan_timeout_func(gpointer user_data)
 
     if(!uconfig_data->modem_disable_5g_fail_auto_reset)
     {
-        if(mm_data->modem_have_5g_connected && !mm_data->modem_rfkill_state)
+        if(mm_data->modem_mode==PCAT_MODEM_MANAGER_MODE_5G)
         {
-            if(now > mm_data->modem_5g_connection_timestamp +
-                modem_5g_fail_timeout)
+            mm_data->modem_5g_connection_timestamp = now;
+        }
+        else
+        {
+            if(mm_data->modem_have_5g_connected &&
+                !mm_data->modem_rfkill_state)
             {
-                mm_data->modem_5g_connection_timestamp = now;
-                mm_data->modem_have_5g_connected = FALSE;
+                if(now > mm_data->modem_5g_connection_timestamp +
+                    modem_5g_fail_timeout)
+                {
+                    mm_data->modem_5g_connection_timestamp = now;
+                    mm_data->modem_have_5g_connected = FALSE;
 
-                pcat_modem_manager_device_rfkill_mode_set(TRUE);
-                g_usleep(500000);
-                pcat_modem_manager_device_rfkill_mode_set(FALSE);
+                    pcat_modem_manager_device_rfkill_mode_set(TRUE);
+                    g_usleep(500000);
+                    pcat_modem_manager_device_rfkill_mode_set(FALSE);
+                }
             }
         }
     }
