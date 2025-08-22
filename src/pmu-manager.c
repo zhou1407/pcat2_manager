@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/file.h>
 #include <fcntl.h>
 
 #include "pmu-manager.h"
@@ -910,6 +911,14 @@ static gboolean pcat_pmu_pm_dev_open(PCatPMUManagerData *pmu_data)
         return FALSE;
     }
 
+    if(flock(fd, LOCK_EX)!=0)
+    {
+        g_warning("Failed to lock PM device %s, maybe "
+            "another process using this device!", strerror(errno));
+
+        return FALSE;
+    }
+
     channel = g_io_channel_unix_new(fd);
     if(channel==NULL)
     {
@@ -974,6 +983,7 @@ static void pcat_pmu_pm_dev_close(PCatPMUManagerData *pmu_data)
 
     if(pmu_data->dev_fd > 0)
     {
+        flock(pmu_data->dev_fd, LOCK_UN);
         close(pmu_data->dev_fd);
         pmu_data->dev_fd = -1;
     }

@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/file.h>
 #include <fcntl.h>
 #include <glib.h>
 #include <zlib.h>
@@ -660,6 +661,14 @@ static gboolean pcat_pmu_pm_dev_open(PCatPMUUpdaterData *pmu_data)
         return FALSE;
     }
 
+    if(flock(fd, LOCK_EX)!=0)
+    {
+        g_warning("Failed to lock PM device %s, maybe "
+            "another process using this device!", strerror(errno));
+
+        return FALSE;
+    }
+
     channel = g_io_channel_unix_new(fd);
     if(channel==NULL)
     {
@@ -724,6 +733,7 @@ static void pcat_pmu_pm_dev_close(PCatPMUUpdaterData *pmu_data)
 
     if(pmu_data->dev_fd > 0)
     {
+        flock(pmu_data->dev_fd, LOCK_UN);
         close(pmu_data->dev_fd);
         pmu_data->dev_fd = -1;
     }
@@ -1059,6 +1069,15 @@ int main(int argc, char *argv[])
             }
         }
 
+        if(g_file_test("/etc/init.d/pcat-manager", G_FILE_TEST_IS_REGULAR |
+            G_FILE_TEST_IS_EXECUTABLE))
+        {
+            printf("Stopping pcat-manager service...\n");
+            g_spawn_command_line_sync("/etc/init.d/pcat-manager stop",
+                NULL, NULL, NULL, NULL);
+            g_usleep(3000000);
+        }
+
         if(!pcat_pmu_pm_dev_open(&g_pcat_pmu_updater_data))
         {
             return 4;
@@ -1128,6 +1147,11 @@ int main(int argc, char *argv[])
     {
         printf("Shutting down system to apply new PMU firmware....\n");
         g_spawn_command_line_async("/sbin/poweroff", NULL);
+    }
+
+    if(ret!=0)
+    {
+        fprintf(stderr, "PMU firmware update failed! Please reboot system.\n");
     }
 
     return ret;
