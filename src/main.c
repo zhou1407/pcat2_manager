@@ -42,6 +42,17 @@ const gchar * const g_pcat_main_iface_names[
     "wwan_lte_v6"
 };
 
+const gboolean const g_pcat_main_iface_is_ipv6[
+    PCAT_MAIN_IFACE_LAST] =
+{
+    FALSE,
+    TRUE,
+    FALSE,
+    TRUE,
+    FALSE,
+    TRUE
+};
+
 const PCatManagerRouteMode g_pcat_main_iface_route_mode[
     PCAT_MAIN_IFACE_LAST] =
 {
@@ -545,6 +556,7 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
     gboolean mwan3_interface_check_flag;
     gint64 mwan3_interface_check_timestamp;
     gboolean mwan3_status_all_not_running;
+    const gchar *iface_protocol_type;
 
     mwan3_interface_check_timestamp = g_get_monotonic_time();
 
@@ -608,16 +620,10 @@ static void *pcat_main_mwan_policy_check_thread_func(void *user_data)
                 }
 
                 ret = FALSE;
-                if(json_object_object_get_ex(root, "ipv4-address", &child))
-                {
-                    if(json_object_get_type(child)==json_type_array &&
-                       json_object_array_length(child) > 0)
-                    {
-                        ret = TRUE;
-                    }
-                }
-
-                if(json_object_object_get_ex(root, "ipv6-address", &child))
+                iface_protocol_type = g_pcat_main_iface_is_ipv6[i] ?
+                    "ipv6-address" : "ipv4-address";
+                if(json_object_object_get_ex(root, iface_protocol_type,
+                    &child))
                 {
                     if(json_object_get_type(child)==json_type_array &&
                        json_object_array_length(child) > 0)

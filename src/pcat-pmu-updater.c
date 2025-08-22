@@ -106,6 +106,7 @@ typedef struct _PCatPMUUpdaterData
 
     gchar *dtb_compatible;
     gsize dtb_compatible_len;
+    gboolean require_poweroff;
 }PCatPMUUpdaterData;
 
 static PCatPMUUpdaterData g_pcat_pmu_updater_data = {0};
@@ -581,6 +582,7 @@ static void pcat_pmu_pm_dev_read_data_parse(PCatPMUUpdaterData *pmu_data)
                         {
                             printf("PMU firmware updated successfully.\n");
                             pmu_data->fw_update_flag = 0;
+                            pmu_data->require_poweroff = TRUE;
                         }
                         else
                         {
@@ -1120,6 +1122,12 @@ int main(int argc, char *argv[])
     {
         g_free(g_pcat_pmu_updater_data.dtb_compatible);
         g_pcat_pmu_updater_data.dtb_compatible = NULL;
+    }
+
+    if(g_pcat_pmu_updater_data.require_poweroff)
+    {
+        printf("Shutting down system to apply new PMU firmware....\n");
+        g_spawn_command_line_async("/sbin/poweroff", NULL);
     }
 
     return ret;
