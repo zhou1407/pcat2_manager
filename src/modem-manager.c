@@ -195,11 +195,12 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                         }
                     }
 
-                    // Signal strength calculation based on cellular industry standards
-                    // References:
-                    // - https://www.digi.com/support/knowledge-base/understanding-lte-signal-strength-values
-                    // - https://wiki.teltonika-networks.com/view/RSRP_and_RSRQ
-                    // - https://poynting.tech/articles/antenna-faq/signal-strength-measure-rsrp-rsrq-and-sinr-reference-for-lte-cheat-sheet/
+                    /* Signal strength calculation based on cellular industry standards
+                     * References:
+                     * - https://www.digi.com/support/knowledge-base/understanding-lte-signal-strength-values
+                     * - https://wiki.teltonika-networks.com/view/RSRP_and_RSRQ
+                     * - https://poynting.tech/articles/antenna-faq/signal-strength-measure-rsrp-rsrq-and-sinr-reference-for-lte-cheat-sheet/
+                     */
                     mm_data->modem_signal_strength = 0;
 
                     signal_value = 0;
