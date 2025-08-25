@@ -195,6 +195,11 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                         }
                     }
 
+                    // Signal strength calculation based on cellular industry standards
+                    // References:
+                    // - https://www.digi.com/support/knowledge-base/understanding-lte-signal-strength-values
+                    // - https://wiki.teltonika-networks.com/view/RSRP_and_RSRQ
+                    // - https://poynting.tech/articles/antenna-faq/signal-strength-measure-rsrp-rsrq-and-sinr-reference-for-lte-cheat-sheet/
                     mm_data->modem_signal_strength = 0;
 
                     signal_value = 0;
@@ -203,13 +208,13 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                     {
                         if(sscanf(value_raw_str, "%d", &signal_raw)>0)
                         {
-                            if(signal_raw >= -65)
+                            if(signal_raw >= -55)
                             {
                                 signal_value = 100;
                             }
-                            else if(signal_raw >= -85)
+                            else if(signal_raw >= -95)
                             {
-                                signal_value = (signal_raw + 85) * 5;
+                                signal_value = (signal_raw + 95) * 100 / 40;
                             }
                         }
                     }
@@ -224,13 +229,13 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                     {
                         if(sscanf(value_raw_str, "%d", &signal_raw)>0)
                         {
-                            if(signal_raw >= -10)
+                            if(signal_raw >= -8)
                             {
                                 signal_value = 100;
                             }
-                            else if(signal_raw >= -20)
+                            else if(signal_raw >= -18)
                             {
-                                signal_value = (signal_raw + 20) * 10;
+                                signal_value = (signal_raw + 18) * 10;
                             }
                         }
                     }
@@ -245,13 +250,13 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                     {
                         if(sscanf(value_raw_str, "%d", &signal_raw)>0)
                         {
-                            if(signal_raw >= -80)
+                            if(signal_raw >= -70)
                             {
                                 signal_value = 100;
                             }
-                            else if(signal_raw >= -100)
+                            else if(signal_raw >= -110)
                             {
-                                signal_value = (signal_raw + 100) * 5;
+                                signal_value = (signal_raw + 110) * 100 / 40;
                             }
                         }
                     }
@@ -272,7 +277,7 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                             }
                             else if(signal_raw >= -100)
                             {
-                                signal_value = (signal_raw + 100) * 5 / 2;
+                                signal_value = (signal_raw + 100) * 100 / 40;
                             }
                         }
                     }
@@ -281,7 +286,7 @@ static inline void pcat_modem_manager_external_control_exec_line_parser(
                         mm_data->modem_signal_strength = signal_value;
                     }
 
-                    g_message("Modem signal strength: %d", signal_value);
+                    g_message("Modem signal strength: %d", mm_data->modem_signal_strength);
                 }
                 else if(g_strcmp0(cmd, "SIMSTATUS")==0)
                 {
