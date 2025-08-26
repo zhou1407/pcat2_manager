@@ -48,6 +48,8 @@ typedef enum
     PCAT_PMU_MANAGER_COMMAND_NET_STATUS_LED_SETUP_ACK = 0x1A,
     PCAT_PMU_MANAGER_COMMAND_POWER_ON_EVENT_GET = 0x1B,
     PCAT_PMU_MANAGER_COMMAND_POWER_ON_EVENT_GET_ACK = 0x1C,
+    PCAT_PMU_MANAGER_COMMAND_STATUS_LED_BEEPER_V2_SET = 0x9B,
+    PCAT_PMU_MANAGER_COMMAND_STATUS_LED_BEEPER_V2_SET_ACK = 0x9C,
 }PCatPMUManagerCommandType;
 
 typedef struct _PCatPMUManagerCommandData
@@ -583,6 +585,30 @@ static void pcat_pmu_manager_voltage_threshold_set_interval(
         PCAT_PMU_MANAGER_COMMAND_VOLTAGE_THRESHOLD_SET, buffer, 18, TRUE);
 }
 
+static void pcat_pmu_manager_status_led_beeper_v2_set_interval(
+    PCatPMUManagerData *pmu_data, gboolean led_enabled,
+    gboolean beeper_enabled)
+{
+    guint8 state;
+
+    state = led_enabled ? 1 : 0;
+    state |= beeper_enabled ? 2 : 0;
+
+    pcat_pmu_pm_dev_write_data_request(pmu_data,
+        PCAT_PMU_MANAGER_COMMAND_STATUS_LED_BEEPER_V2_SET, &state, 1, TRUE);
+}
+
+static void pcat_pmu_manager_status_led_beeper_v2_get_interval(
+    PCatPMUManagerData *pmu_data)
+{
+    guint8 state;
+
+    state = 0xFF;
+
+    pcat_pmu_pm_dev_write_data_request(pmu_data,
+        PCAT_PMU_MANAGER_COMMAND_STATUS_LED_BEEPER_V2_SET, &state, 1, TRUE);
+}
+
 static void pcat_pmu_pm_status_get(PCatPMUManagerData *pmu_data)
 {
     guint battery_voltage = 0, charger_voltage = 0;
@@ -841,6 +867,21 @@ static void pcat_pmu_pm_dev_read_data_parse(PCatPMUManagerData *pmu_data)
                         }
 
                         pmu_data->power_on_event = extra_data[0];
+
+                        break;
+                    }
+                    case PCAT_PMU_MANAGER_COMMAND_STATUS_LED_BEEPER_V2_SET_ACK:
+                    {
+                        if(extra_data_len < 1)
+                        {
+                            break;
+                        }
+
+                        if(extra_data[0] <= 3)
+                        {
+                            pmu_data->status_led_v2_state = extra_data[0] & 1;
+                            pmu_data->beeper_state = (extra_data[0] >> 1) & 1;
+                        }
 
                         break;
                     }
@@ -1345,6 +1386,9 @@ gboolean pcat_pmu_manager_init()
 
     pcat_pmu_manager_power_on_event_get_internal(&g_pcat_pmu_manager_data);
 
+    pcat_pmu_manager_status_led_beeper_v2_get_interval(
+        &g_pcat_pmu_manager_data);
+
     return TRUE;
 }
 
@@ -1489,7 +1533,11 @@ gint pcat_pmu_manager_board_temp_get()
 
 void pcat_pmu_manager_status_led_v2_state_set(gboolean state)
 {
+    g_pcat_pmu_manager_data.status_led_v2_state = state;
 
+    pcat_pmu_manager_status_led_beeper_v2_set_interval(
+        &g_pcat_pmu_manager_data, g_pcat_pmu_manager_data.status_led_v2_state,
+        g_pcat_pmu_manager_data.beeper_state);
 }
 
 gboolean pcat_pmu_manager_status_led_v2_state_get()
@@ -1499,7 +1547,11 @@ gboolean pcat_pmu_manager_status_led_v2_state_get()
 
 void pcat_pmu_manager_beeper_state_set(gboolean state)
 {
+    g_pcat_pmu_manager_data.beeper_state = state;
 
+    pcat_pmu_manager_status_led_beeper_v2_set_interval(
+        &g_pcat_pmu_manager_data, g_pcat_pmu_manager_data.status_led_v2_state,
+        g_pcat_pmu_manager_data.beeper_state);
 }
 
 gboolean pcat_pmu_manager_beeper_state_get()
