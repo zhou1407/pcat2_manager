@@ -883,6 +883,9 @@ static void pcat_pmu_pm_dev_read_data_parse(PCatPMUManagerData *pmu_data)
                             pmu_data->beeper_state = (extra_data[0] >> 1) & 1;
                         }
 
+                        g_message("PMU IO operation status: %X",
+                            extra_data[0]);
+
                         break;
                     }
                     default:
@@ -1558,3 +1561,4 @@ gboolean pcat_pmu_manager_beeper_state_get()
 {
     return g_pcat_pmu_manager_data.beeper_state;
 }
+
