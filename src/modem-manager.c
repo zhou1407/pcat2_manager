@@ -796,13 +796,14 @@ static gboolean pcat_modem_scan_timeout_func(gpointer user_data)
 
     return TRUE;
 }
-gboolean enable_modem = FALSE; 
-if(!enable_modem) {
+
+gboolean pcat_modem_manager_init()
+{
+   gboolean enable_modem = FALSE; 
+   if(!enable_modem) {
     g_message("Modem functionality is disabled by configuration");
     return TRUE; 
 }
-gboolean pcat_modem_manager_init()
-{
     int errcode;
     PCatManagerMainConfigData *main_config_data;
     gchar *command[] = {"/usr/sbin/rfkill", "unblock", "wwan", NULL};
