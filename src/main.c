@@ -1175,10 +1175,10 @@ int main(int argc, char *argv[])
             "power management may not work!");
     }
 
-    if(!pcat_modem_manager_init())
+     gboolean enable_modem = FALSE; 
+    if(enable_modem && !pcat_modem_manager_init())
     {
-        g_warning("Failed to initialize modem manager, "
-            "LTE/5G modem may not work!");
+    g_warning("Failed to initialize modem manager, LTE/5G modem may not work!");
     }
     if(!pcat_controller_init())
     {
